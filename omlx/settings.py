@@ -873,20 +873,6 @@ class IntegrationSettings:
     pi_model: str | None = None
     copilot_model: str | None = None
     openclaw_tools_profile: str = "coding"
-    markitdown_enabled: bool = True
-    markitdown_expose_model: bool = False
-    markitdown_max_file_size_mb: int = 25
-    markitdown_max_files_per_request: int = 5
-    markitdown_pdf_processing_engine: str = "markitdown"
-    # "ddgs" (all engines) | "ddgs_custom" | "duckduckgo" | "brave" | "searxng"
-    web_search_provider: str = "ddgs"
-    web_search_brave_api_key: str = ""
-    web_search_searxng_url: str = ""
-    web_search_ddgs_backends: str = ""  # comma-separated, used by ddgs_custom
-    web_search_max_results: int = 3  # 1..10
-    web_search_content_mode: str = "snippet"  # "snippet" | "full"
-    web_search_content_truncate: bool = True
-    web_search_content_max_chars: int = 20000
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -898,19 +884,6 @@ class IntegrationSettings:
             "pi_model": self.pi_model,
             "copilot_model": self.copilot_model,
             "openclaw_tools_profile": self.openclaw_tools_profile,
-            "markitdown_enabled": self.markitdown_enabled,
-            "markitdown_expose_model": self.markitdown_expose_model,
-            "markitdown_max_file_size_mb": self.markitdown_max_file_size_mb,
-            "markitdown_max_files_per_request": self.markitdown_max_files_per_request,
-            "markitdown_pdf_processing_engine": self.markitdown_pdf_processing_engine,
-            "web_search_provider": self.web_search_provider,
-            "web_search_brave_api_key": self.web_search_brave_api_key,
-            "web_search_searxng_url": self.web_search_searxng_url,
-            "web_search_ddgs_backends": self.web_search_ddgs_backends,
-            "web_search_max_results": self.web_search_max_results,
-            "web_search_content_mode": self.web_search_content_mode,
-            "web_search_content_truncate": self.web_search_content_truncate,
-            "web_search_content_max_chars": self.web_search_content_max_chars,
         }
 
     @classmethod
@@ -924,27 +897,6 @@ class IntegrationSettings:
             pi_model=data.get("pi_model"),
             copilot_model=data.get("copilot_model"),
             openclaw_tools_profile=data.get("openclaw_tools_profile", "coding"),
-            markitdown_enabled=data.get("markitdown_enabled", True),
-            markitdown_expose_model=data.get("markitdown_expose_model", False),
-            markitdown_max_file_size_mb=data.get("markitdown_max_file_size_mb", 25),
-            markitdown_max_files_per_request=data.get(
-                "markitdown_max_files_per_request", 5
-            ),
-            markitdown_pdf_processing_engine=data.get(
-                "markitdown_pdf_processing_engine", "markitdown"
-            ),
-            web_search_provider=data.get("web_search_provider", "ddgs"),
-            web_search_brave_api_key=data.get("web_search_brave_api_key", ""),
-            web_search_searxng_url=data.get("web_search_searxng_url", ""),
-            web_search_ddgs_backends=data.get("web_search_ddgs_backends", ""),
-            web_search_max_results=data.get("web_search_max_results", 3),
-            web_search_content_mode=data.get("web_search_content_mode", "snippet"),
-            web_search_content_truncate=data.get(
-                "web_search_content_truncate", True
-            ),
-            web_search_content_max_chars=data.get(
-                "web_search_content_max_chars", 20000
-            ),
         )
 
 
@@ -1233,22 +1185,6 @@ class GlobalSettings:
                 "yes",
                 "on",
             }
-
-        # Integration settings
-        if markitdown_enabled := os.getenv("OMLX_MARKITDOWN_ENABLED"):
-            self.integrations.markitdown_enabled = (
-                markitdown_enabled.strip().lower() in {"1", "true", "yes", "on"}
-            )
-        if markitdown_expose_model := os.getenv("OMLX_MARKITDOWN_EXPOSE_MODEL"):
-            self.integrations.markitdown_expose_model = (
-                markitdown_expose_model.strip().lower() in {"1", "true", "yes", "on"}
-            )
-        if markitdown_pdf_processing_engine := os.getenv(
-            "OMLX_MARKITDOWN_PDF_PROCESSING_ENGINE"
-        ):
-            self.integrations.markitdown_pdf_processing_engine = (
-                markitdown_pdf_processing_engine.strip() or "markitdown"
-            )
 
     def _apply_cli_overrides(self, args: Any, *, include_api_key: bool = True) -> None:
         """
@@ -1708,14 +1644,6 @@ class GlobalSettings:
                 f"Invalid claude_code mode: '{self.claude_code.mode}' "
                 f"(must be one of {sorted(valid_modes)})"
             )
-
-        # Integration validation
-        if self.integrations.markitdown_max_file_size_mb <= 0:
-            errors.append("markitdown_max_file_size_mb must be > 0")
-        if self.integrations.markitdown_max_files_per_request <= 0:
-            errors.append("markitdown_max_files_per_request must be > 0")
-        if not str(self.integrations.markitdown_pdf_processing_engine or "").strip():
-            errors.append("markitdown_pdf_processing_engine must not be empty")
 
         # HuggingFace validation
         if self.huggingface.endpoint:

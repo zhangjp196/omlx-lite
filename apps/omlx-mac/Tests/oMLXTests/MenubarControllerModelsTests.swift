@@ -117,7 +117,7 @@ final class MenubarControllerModelsTests: XCTestCase {
     func testVisibleMenuModelsDropsVirtualEntries() {
         let models = [
             makeModel("a"),
-            makeModel("markitdown", loaded: true, virtual: true),
+            makeModel("virtual-model", loaded: true, virtual: true),
         ]
         XCTAssertEqual(
             MenubarController.visibleMenuModels(models).map(\.id),

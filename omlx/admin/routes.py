@@ -32,7 +32,6 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ..api.markitdown import MARKITDOWN_MODEL_ID, markitdown_model_visible
 from ..api.openai_models import _coerce_tool_call_arguments
 from ..api.utils import _try_parse_json
 from ..model_discovery import model_display_name as _model_display_name
@@ -45,12 +44,6 @@ from ..model_settings import (
 )
 from ..settings import BURST_DECODE_MODES, SubKeyEntry, burst_decode_env
 from ..utils.release_check import normalize_update_channel, select_latest_release
-from ..websearch import (
-    DDGS_TEXT_BACKENDS,
-    DEFAULT_MAX_RESULTS,
-    run_web_search_test,
-)
-from ..websearch import SUPPORTED_PROVIDERS as SUPPORTED_WEB_SEARCH_PROVIDERS
 from .auth import (
     REMEMBER_ME_MAX_AGE,
     SESSION_MAX_AGE,
@@ -393,19 +386,6 @@ class GlobalSettingsRequest(BaseModel):
     integrations_openclaw_tools_profile: (
         Literal["minimal", "coding", "messaging", "full"] | None
     ) = None
-    markitdown_enabled: bool | None = None
-    markitdown_expose_model: bool | None = None
-    markitdown_max_file_size_mb: int | None = None
-    markitdown_max_files_per_request: int | None = None
-    markitdown_pdf_processing_engine: str | None = None
-    web_search_provider: str | None = None
-    web_search_brave_api_key: str | None = None
-    web_search_searxng_url: str | None = None
-    web_search_ddgs_backends: str | None = None
-    web_search_max_results: int | None = None
-    web_search_content_mode: str | None = None
-    web_search_content_truncate: bool | None = None
-    web_search_content_max_chars: int | None = None
 
     # UI settings
     ui_language: str | None = None
@@ -2149,41 +2129,6 @@ async def list_models(is_admin: bool = Depends(require_admin)):
 
         models.append(model_data)
 
-    if markitdown_model_visible(global_settings) and not any(
-        m.get("id") == MARKITDOWN_MODEL_ID for m in models
-    ):
-        models.append(
-            {
-                "id": MARKITDOWN_MODEL_ID,
-                "model_path": "builtin://markitdown",
-                "display_name": MARKITDOWN_MODEL_ID,
-                "loaded": True,
-                "is_loading": False,
-                "estimated_size": 0,
-                "estimated_size_formatted": format_size(0),
-                "actual_size": 0,
-                "actual_size_formatted": None,
-                "pinned": False,
-                "is_default": False,
-                "engine_type": "markitdown",
-                "model_type": "markitdown",
-                "config_model_type": "markitdown",
-                "thinking_default": None,
-                "preserve_thinking_default": None,
-                "source_type": "builtin",
-                "source_repo_id": None,
-                "last_access": None,
-                "dflash_compatible": False,
-                "dflash_compatibility_reason": "",
-                "dflash_ssd_cache_available": False,
-                "mtp_compatible": False,
-                "mtp_compatibility_reason": "",
-                "is_paroquant": False,
-                "paroquant_reason": "",
-                "virtual": True,
-            }
-        )
-
     return {"models": models}
 
 
@@ -3493,19 +3438,6 @@ async def get_global_settings(is_admin: bool = Depends(require_admin)):
             "pi_model": global_settings.integrations.pi_model,
             "copilot_model": global_settings.integrations.copilot_model,
             "openclaw_tools_profile": global_settings.integrations.openclaw_tools_profile,
-            "markitdown_enabled": global_settings.integrations.markitdown_enabled,
-            "markitdown_expose_model": global_settings.integrations.markitdown_expose_model,
-            "markitdown_max_file_size_mb": global_settings.integrations.markitdown_max_file_size_mb,
-            "markitdown_max_files_per_request": global_settings.integrations.markitdown_max_files_per_request,
-            "markitdown_pdf_processing_engine": global_settings.integrations.markitdown_pdf_processing_engine,
-            "web_search_provider": global_settings.integrations.web_search_provider,
-            "web_search_brave_api_key": global_settings.integrations.web_search_brave_api_key,
-            "web_search_searxng_url": global_settings.integrations.web_search_searxng_url,
-            "web_search_ddgs_backends": global_settings.integrations.web_search_ddgs_backends,
-            "web_search_max_results": global_settings.integrations.web_search_max_results,
-            "web_search_content_mode": global_settings.integrations.web_search_content_mode,
-            "web_search_content_truncate": global_settings.integrations.web_search_content_truncate,
-            "web_search_content_max_chars": global_settings.integrations.web_search_content_max_chars,
         },
         "system": {
             "total_memory_bytes": memory_info["total_bytes"],
@@ -4288,135 +4220,6 @@ async def update_global_settings(
             request.integrations_openclaw_tools_profile
         )
         integrations_changed = True
-    if "markitdown_enabled" in request.model_fields_set:
-        global_settings.integrations.markitdown_enabled = bool(
-            request.markitdown_enabled
-        )
-        integrations_changed = True
-    if "markitdown_expose_model" in request.model_fields_set:
-        global_settings.integrations.markitdown_expose_model = bool(
-            request.markitdown_expose_model
-        )
-        integrations_changed = True
-    if "markitdown_max_file_size_mb" in request.model_fields_set:
-        if (
-            request.markitdown_max_file_size_mb is None
-            or request.markitdown_max_file_size_mb <= 0
-        ):
-            raise HTTPException(
-                status_code=400,
-                detail="markitdown_max_file_size_mb must be > 0",
-            )
-        global_settings.integrations.markitdown_max_file_size_mb = (
-            request.markitdown_max_file_size_mb
-        )
-        integrations_changed = True
-    if "markitdown_max_files_per_request" in request.model_fields_set:
-        if (
-            request.markitdown_max_files_per_request is None
-            or request.markitdown_max_files_per_request <= 0
-        ):
-            raise HTTPException(
-                status_code=400,
-                detail="markitdown_max_files_per_request must be > 0",
-            )
-        global_settings.integrations.markitdown_max_files_per_request = (
-            request.markitdown_max_files_per_request
-        )
-        integrations_changed = True
-    if "markitdown_pdf_processing_engine" in request.model_fields_set:
-        engine = (request.markitdown_pdf_processing_engine or "").strip()
-        if not engine:
-            raise HTTPException(
-                status_code=400,
-                detail="markitdown_pdf_processing_engine must not be empty",
-            )
-        global_settings.integrations.markitdown_pdf_processing_engine = engine
-        integrations_changed = True
-    if "web_search_provider" in request.model_fields_set:
-        provider = (request.web_search_provider or "").strip().lower()
-        if provider not in SUPPORTED_WEB_SEARCH_PROVIDERS:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "web_search_provider must be one of: "
-                    + ", ".join(SUPPORTED_WEB_SEARCH_PROVIDERS)
-                ),
-            )
-        global_settings.integrations.web_search_provider = provider
-        integrations_changed = True
-    if "web_search_brave_api_key" in request.model_fields_set:
-        global_settings.integrations.web_search_brave_api_key = (
-            request.web_search_brave_api_key or ""
-        ).strip()
-        integrations_changed = True
-    if "web_search_searxng_url" in request.model_fields_set:
-        searxng_url = (request.web_search_searxng_url or "").strip().rstrip("/")
-        if searxng_url and not searxng_url.startswith(("http://", "https://")):
-            raise HTTPException(
-                status_code=400,
-                detail="web_search_searxng_url must start with http:// or https://",
-            )
-        global_settings.integrations.web_search_searxng_url = searxng_url
-        integrations_changed = True
-    if "web_search_ddgs_backends" in request.model_fields_set:
-        raw_backends = request.web_search_ddgs_backends or ""
-        requested = [
-            b.strip().lower() for b in raw_backends.split(",") if b.strip()
-        ]
-        unknown = [b for b in requested if b not in DDGS_TEXT_BACKENDS]
-        if unknown:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "web_search_ddgs_backends contains unknown engines: "
-                    + ", ".join(unknown)
-                ),
-            )
-        global_settings.integrations.web_search_ddgs_backends = ",".join(
-            dict.fromkeys(requested)
-        )
-        integrations_changed = True
-    if "web_search_max_results" in request.model_fields_set:
-        if (
-            request.web_search_max_results is None
-            or not 1 <= request.web_search_max_results <= 10
-        ):
-            raise HTTPException(
-                status_code=400,
-                detail="web_search_max_results must be between 1 and 10",
-            )
-        global_settings.integrations.web_search_max_results = (
-            request.web_search_max_results
-        )
-        integrations_changed = True
-    if "web_search_content_mode" in request.model_fields_set:
-        content_mode = (request.web_search_content_mode or "").strip().lower()
-        if content_mode not in ("snippet", "full"):
-            raise HTTPException(
-                status_code=400,
-                detail="web_search_content_mode must be snippet or full",
-            )
-        global_settings.integrations.web_search_content_mode = content_mode
-        integrations_changed = True
-    if "web_search_content_truncate" in request.model_fields_set:
-        global_settings.integrations.web_search_content_truncate = bool(
-            request.web_search_content_truncate
-        )
-        integrations_changed = True
-    if "web_search_content_max_chars" in request.model_fields_set:
-        if (
-            request.web_search_content_max_chars is None
-            or request.web_search_content_max_chars <= 0
-        ):
-            raise HTTPException(
-                status_code=400,
-                detail="web_search_content_max_chars must be > 0",
-            )
-        global_settings.integrations.web_search_content_max_chars = (
-            request.web_search_content_max_chars
-        )
-        integrations_changed = True
 
     if integrations_changed:
         runtime_applied.append("integrations")
@@ -4428,10 +4231,7 @@ async def update_global_settings(
             f"openclaw={global_settings.integrations.openclaw_model}, "
             f"hermes={global_settings.integrations.hermes_model}, "
             f"pi={global_settings.integrations.pi_model}, "
-            f"markitdown_enabled={global_settings.integrations.markitdown_enabled}, "
-            f"markitdown_expose_model={global_settings.integrations.markitdown_expose_model}, "
-            f"markitdown_pdf_processing_engine={global_settings.integrations.markitdown_pdf_processing_engine}, "
-            f"web_search_provider={global_settings.integrations.web_search_provider}"
+            f"openclaw_tools_profile={global_settings.integrations.openclaw_tools_profile}"
         )
 
     # Apply UI settings
@@ -4507,37 +4307,6 @@ async def update_global_settings(
         "message": message,
         "runtime_applied": runtime_applied,
     }
-
-
-class WebSearchTestRequest(BaseModel):
-    """Pending settings-form values to validate with one real search."""
-
-    provider: str = "ddgs"
-    brave_api_key: str = ""
-    searxng_url: str = ""
-    ddgs_backends: str = ""
-    max_results: int = Field(default=DEFAULT_MAX_RESULTS, ge=1, le=10)
-
-
-@router.post("/api/web-search/test")
-async def test_web_search(
-    request: WebSearchTestRequest,
-    is_admin: bool = Depends(require_admin),
-):
-    """
-    Run one real search with the pending (unsaved) web search settings.
-
-    Nothing is persisted here; saving stays with POST /api/global-settings.
-    Always answers HTTP 200 with an {"ok": bool, ...} payload so the UI
-    can show the provider's error message verbatim.
-    """
-    return await run_web_search_test(
-        request.provider,
-        brave_api_key=request.brave_api_key,
-        searxng_url=request.searxng_url,
-        ddgs_backends=request.ddgs_backends,
-        max_results=request.max_results,
-    )
 
 
 # =============================================================================

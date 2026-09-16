@@ -100,16 +100,6 @@ from .api.embedding_utils import (
     normalize_input,
     truncate_embedding,
 )
-from .api.markitdown import (
-    MARKITDOWN_MODEL_ID,
-    MarkItDownRequestError,
-    convert_messages_to_markdown_async,
-    is_markitdown_model,
-    markitdown_model_visible,
-    preprocess_markitdown_file_parts_async,
-    request_has_file_parts,
-    stream_messages_to_markdown_async,
-)
 
 # Import from new modular API
 from .api.openai_models import (
@@ -707,13 +697,6 @@ from .api.mcp_routes import set_mcp_manager_getter
 
 set_mcp_manager_getter(get_mcp_manager)
 app.include_router(mcp_router, dependencies=[Depends(verify_api_key)])
-
-# Include web search routes (chat UI built-in web_search / fetch_url tools)
-from .api.websearch_routes import router as websearch_router
-from .api.websearch_routes import set_global_settings_getter as _set_websearch_settings
-
-_set_websearch_settings(lambda: _server_state.global_settings)
-app.include_router(websearch_router, dependencies=[Depends(verify_api_key)])
 
 # Include audio routes only when mlx-audio is installed.
 # audio_routes.py itself only imports fastapi/stdlib at module level, so it
@@ -2927,219 +2910,6 @@ def _ane_prefill_status(pool) -> dict:
     return result
 
 
-def _markitdown_virtual_model_status() -> dict:
-    return {
-        "id": MARKITDOWN_MODEL_ID,
-        "model_path": "builtin://markitdown",
-        "loaded": True,
-        "is_loading": False,
-        "loading_started_at": None,
-        "estimated_size": 0,
-        "actual_size": 0,
-        "pinned": False,
-        "engine_type": "markitdown",
-        "model_type": "markitdown",
-        "config_model_type": "markitdown",
-        "thinking_default": None,
-        "preserve_thinking_default": None,
-        "source_type": "builtin",
-        "source_repo_id": None,
-        "last_access": None,
-    }
-
-
-def _markitdown_is_visible() -> bool:
-    return markitdown_model_visible(_server_state.global_settings)
-
-
-def _with_markitdown_status(status: dict) -> dict:
-    if not _markitdown_is_visible():
-        return status
-
-    augmented = dict(status)
-    models = list(augmented.get("models", []))
-    if not any(m.get("id") == MARKITDOWN_MODEL_ID for m in models):
-        models.append(_markitdown_virtual_model_status())
-    augmented["models"] = models
-    augmented["model_count"] = len(models)
-    augmented["loaded_count"] = sum(1 for m in models if m.get("loaded"))
-    return augmented
-
-
-
-
-
-async def _preprocess_markitdown_files_for_llm(
-    request: ChatCompletionRequest,
-) -> ChatCompletionRequest:
-    if not request_has_file_parts(request.messages):
-        return request
-
-    try:
-        messages = await preprocess_markitdown_file_parts_async(
-            request.messages,
-            global_settings=_server_state.global_settings,
-            engine_pool=_server_state.engine_pool,
-            settings_manager=_server_state.settings_manager,
-            get_sampling_params=get_sampling_params,
-            fail_when_disabled=True,
-            allow_missing_historical_files=True,
-        )
-    except MarkItDownRequestError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return request.model_copy(update={"messages": messages})
-
-
-def _build_markitdown_chat_response(
-    request: ChatCompletionRequest,
-    markdown: str,
-) -> ChatCompletionResponse:
-    return ChatCompletionResponse(
-        model=request.model,
-        choices=[
-            ChatCompletionChoice(
-                message=AssistantMessage(content=markdown),
-                finish_reason="stop",
-            )
-        ],
-        usage=Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
-    )
-
-
-async def _stream_markitdown_chat_response(
-    request: ChatCompletionRequest,
-    markdown_chunks: AsyncIterator[str],
-    response_id: str | None = None,
-) -> AsyncIterator[str]:
-    response_id = response_id or f"chatcmpl-{uuid.uuid4().hex[:8]}"
-    role_chunk = ChatCompletionChunk(
-        id=response_id,
-        model=request.model,
-        choices=[
-            ChatCompletionChunkChoice(
-                delta=ChatCompletionChunkDelta(role="assistant"),
-            )
-        ],
-    )
-    yield f"data: {role_chunk.model_dump_json(exclude_none=True)}\n\n"
-
-    emitted = False
-    async for markdown in markdown_chunks:
-        if not markdown:
-            continue
-        emitted = True
-        content_chunk = ChatCompletionChunk(
-            id=response_id,
-            model=request.model,
-            choices=[
-                ChatCompletionChunkChoice(
-                    delta=ChatCompletionChunkDelta(content=markdown),
-                )
-            ],
-        )
-        yield f"data: {content_chunk.model_dump_json(exclude_none=True)}\n\n"
-
-    if not emitted:
-        raise MarkItDownRequestError(
-            "No text or supported file content found for MarkItDown.",
-            status_code=400,
-        )
-
-    final_chunk = ChatCompletionChunk(
-        id=response_id,
-        model=request.model,
-        choices=[
-            ChatCompletionChunkChoice(
-                delta=ChatCompletionChunkDelta(),
-                finish_reason="stop",
-            )
-        ],
-    )
-    yield f"data: {final_chunk.model_dump_json(exclude_none=True)}\n\n"
-
-    if request.stream_options and request.stream_options.include_usage:
-        usage_chunk = ChatCompletionChunk(
-            id=response_id,
-            model=request.model,
-            choices=[],
-            usage=Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
-        )
-        yield f"data: {usage_chunk.model_dump_json(exclude_none=True)}\n\n"
-
-    yield "data: [DONE]\n\n"
-
-
-async def _create_markitdown_chat_completion(
-    request: ChatCompletionRequest,
-    http_request: FastAPIRequest,
-):
-    if not _markitdown_is_visible():
-        raise HTTPException(
-            status_code=404,
-            detail=f"Model not found: {MARKITDOWN_MODEL_ID}",
-        )
-
-    if request.stream:
-        response_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
-        keepalive = _resolve_keepalive("openai_chat")
-        if keepalive == _KEEPALIVE_CHAT_CHUNK:
-            keepalive = _chat_keepalive_chunk(response_id)
-        markdown_chunks = stream_messages_to_markdown_async(
-            request.messages,
-            global_settings=_server_state.global_settings,
-            engine_pool=_server_state.engine_pool,
-            settings_manager=_server_state.settings_manager,
-            get_sampling_params=get_sampling_params,
-            latest_user_only=True,
-        )
-        return StreamingResponse(
-            _with_sse_keepalive(
-                _stream_markitdown_chat_response(
-                    request,
-                    markdown_chunks,
-                    response_id=response_id,
-                ),
-                http_request=http_request,
-                keepalive_chunk=keepalive,
-            ),
-            media_type="text/event-stream",
-            headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
-        )
-
-    async def _build_markitdown_completion():
-        try:
-            markdown = await convert_messages_to_markdown_async(
-                request.messages,
-                global_settings=_server_state.global_settings,
-                engine_pool=_server_state.engine_pool,
-                settings_manager=_server_state.settings_manager,
-                get_sampling_params=get_sampling_params,
-                latest_user_only=True,
-            )
-        except MarkItDownRequestError as exc:
-            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-        except RuntimeError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-        if not markdown:
-            raise HTTPException(
-                status_code=400,
-                detail="No text or supported file content found for MarkItDown.",
-            )
-
-        logger.info("MarkItDown completion converted request to markdown")
-        return _build_markitdown_chat_response(
-            request,
-            markdown,
-        ).model_dump_json(exclude_none=True)
-
-    return await _json_response_or_keepalive(
-        http_request, _build_markitdown_completion()
-    )
-
-
 @app.get("/v1/models")
 async def list_models(_: bool = Depends(verify_api_key)) -> ModelsResponse:
     """List all available models with load status."""
@@ -3200,11 +2970,6 @@ async def list_models(_: bool = Depends(verify_api_key)) -> ModelsResponse:
                     max_model_len=get_max_context_window(model_id),
                 )
             )
-    if _markitdown_is_visible() and not any(
-        m.id == MARKITDOWN_MODEL_ID for m in models
-    ):
-        models.append(ModelInfo(id=MARKITDOWN_MODEL_ID, owned_by="omlx"))
-
     # Favorites first; stable sort keeps alphabetical order within groups.
     if favorite_ids:
         models.sort(key=lambda m: m.id not in favorite_ids)
@@ -3222,15 +2987,9 @@ async def list_models_status(_: bool = Depends(verify_api_key)):
     if _server_state.engine_pool is None:
         raise HTTPException(status_code=503, detail="Server not initialized")
 
-    status = _with_markitdown_status(_server_state.engine_pool.get_status())
+    status = _server_state.engine_pool.get_status()
     for m in status["models"]:
         model_id = m["id"]
-        if is_markitdown_model(model_id):
-            m["max_context_window"] = None
-            m["max_tokens"] = None
-            m["is_favorite"] = False
-            m["is_hidden"] = False
-            continue
 
         m["max_context_window"] = get_max_context_window(model_id)
         source_model_id = m.get("source_model_id") or model_id
@@ -3800,11 +3559,6 @@ async def create_chat_completion(
             logger.log(
                 5, "  Message[%d]: role=%s, content=%s...", i, msg.role, content_preview
             )
-
-    if is_markitdown_model(request.model):
-        return await _create_markitdown_chat_completion(request, http_request)
-
-    request = await _preprocess_markitdown_files_for_llm(request)
 
     lease = _LLMEngineLease()
     try:

@@ -1,7 +1,5 @@
 // Application delegate: sequences activation policy, menubar, server
-// bootstrap, and signal handlers. The main AppView window is a SwiftUI
-// `Window` scene declared in oMLXApp.swift — we no longer build it
-// manually here.
+// bootstrap, and signal handlers.
 //
 // Boot flow
 //   applicationWillFinishLaunching  → setActivationPolicy(.regular)
@@ -39,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var welcomeController: WelcomeWindowController?
     private var welcomeCloseObserver: NSObjectProtocol?
+    private var updateConfirmationController: UpdateConfirmationWindowController?
 
     /// Set true by `requestQuit()` to permit a real terminate. Cmd-Q / Dock
     /// Quit / "Quit oMLX" from the application menu all route through
@@ -55,7 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the user can click it to bring the window back.
     private var dropDockIconOnNextClose: Bool = false
 
-    /// Appearance → "Show Dock Icon". While true, every `.accessory` drop is
+    /// "Show Dock Icon" pref. While true, every `.accessory` drop is
     /// suppressed so the Dock icon stays up with no window open.
     private var dockIconAlwaysVisible: Bool {
         MenubarMetricPrefs.showDockIcon
@@ -90,56 +89,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = hidAny
     }
 
-    /// Bring the main AppView window forward. If SwiftUI hasn't materialised
-    /// the NSWindow yet (i.e. nobody opened it since launch), send the
-    /// `omlxapp://main` URL back to this exact app bundle. The Window scene
-    /// in oMLXApp.swift handles the targeted external event.
-    func presentAppView() {
-        // Flip to .regular eagerly so the Dock icon shows in lockstep with
-        // the window appearing. The `didBecomeMain` observer is a backup
-        // for other paths (e.g. Welcome window), but on re-opening a hidden
-        // SwiftUI Window the notification doesn't always fire (the existing
-        // NSWindow is just ordered front rather than re-created), so we
-        // can't rely on it here.
-        if NSApp.activationPolicy() != .regular {
-            NSApp.setActivationPolicy(.regular)
-        }
-        NSApp.activate(ignoringOtherApps: true)
-        if let main = mainAppViewWindow() {
-            // Also apply on every show: the observer fires only on
-            // didBecomeMain, which may not run if the window was just
-            // reordered without becoming main.
-            main.titleVisibility = .hidden
-            main.makeKeyAndOrderFront(nil)
-            return
-        }
-        if let url = URL(string: "omlxapp://main") {
-            // Target this bundle explicitly. A source build and an installed
-            // release share the app.omlx identifier and omlxapp URL scheme;
-            // resolving the URL globally can launch the other copy and leave
-            // two oMLX processes in the Dock.
-            let configuration = NSWorkspace.OpenConfiguration()
-            configuration.activates = true
-            configuration.createsNewApplicationInstance = false
-            NSWorkspace.shared.open(
-                [url],
-                withApplicationAt: Bundle.main.bundleURL,
-                configuration: configuration
-            ) { _, error in
-                if let error {
-                    NSLog("oMLX: failed to open main window: \(error)")
-                }
-            }
-        }
+    /// Opens the browser-based web admin dashboard with auto-login. Gated on
+    /// the server being up — the admin UI lives on the live server port.
+    func openWebAdmin() {
+        guard let server, case .running = server.state else { return }
+        let host = MenubarController.displayHost(server: server, fallback: services.config.host)
+        let port = MenubarController.displayPort(server: server, fallback: services.config.port)
+        guard let url = MenubarController.webAdminURL(
+            host: host,
+            port: port,
+            apiKey: services.config.apiKey
+        ) else { return }
+        NSWorkspace.shared.open(url)
     }
 
-    /// SwiftUI's `Window(id: "main")` tags its NSWindow with that identifier
-    /// (the actual rawValue includes a stable prefix; substring match is
-    /// stable across macOS revisions).
-    private func mainAppViewWindow() -> NSWindow? {
-        NSApp.windows.first { window in
-            window.identifier?.rawValue.contains("main") == true
+    /// Presents the update confirmation window (owned here so the menubar
+    /// app can show it without any window scene). No-op when the controller
+    /// has nothing to confirm.
+    private func presentUpdateConfirmation() {
+        if updateConfirmationController == nil {
+            updateConfirmationController = UpdateConfirmationWindowController(updates: services.updates)
         }
+        updateConfirmationController?.present()
     }
 
     nonisolated func applicationWillFinishLaunching(_ notification: Notification) {
@@ -169,7 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         services.updates.setPresentUpdateConfirmation { [weak self] in
-            self?.presentAppView()
+            self?.presentUpdateConfirmation()
         }
         if !isRunningUnitTests {
             do {
@@ -239,8 +210,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// All three MenubarController construction sites (first-run, returning
-    /// user success, returning user failure) capture the same `openAppView`
-    /// closure and differ only in `server`/`lastError`.
+    /// user success, returning user failure) capture the same callbacks and
+    /// differ only in `server`/`lastError`.
     private func makeMenubar(
         server: ServerProcess?,
         config: AppConfig,
@@ -252,18 +223,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             updates: services.updates,
             lastError: lastError,
             client: services.client,
-            openModelSettings: { [weak self] id in
-                guard let self else { return }
-                self.services.modelDetailID = id
-                self.services.requestedSection = .models
-                self.presentAppView()
-            },
-            openAppView: { [weak self] in self?.presentAppView() },
-            openAppearanceSettings: { [weak self] in
-                guard let self else { return }
-                self.services.requestedSection = .appearance
-                self.presentAppView()
-            },
+            openModelSettings: { [weak self] _ in self?.openWebAdmin() },
+            openSettings: { [weak self] in self?.openWebAdmin() },
             requestQuit:  { [weak self] in self?.requestQuit() }
         )
     }
@@ -350,8 +311,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Wire NSWindow lifecycle notifications so the Dock icon follows the
     /// "any app window visible → .regular, none → .accessory" rule.
-    /// Both the Welcome wizard and the SwiftUI main window participate; the
-    /// menubar status item is not an NSWindow and is unaffected.
+    /// Both the Welcome wizard and the update confirmation window
+    /// participate; the menubar status item is not an NSWindow and is
+    /// unaffected.
     ///
     /// Uses the selector-based observer API (not the closure-based one) so
     /// the non-Sendable Notification + NSWindow values don't need to cross
@@ -372,16 +334,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func windowDidBecomeMainNotification(_ notif: Notification) {
         guard let win = notif.object as? NSWindow, isAppOwnedWindow(win) else { return }
-        // Hide the SwiftUI Window scene's title text in the title bar
-        // (the "oMLX" floating above the toolbar zone). The title string
-        // is still used by the Window menu / Dock-icon right-click menu —
-        // only the in-bar display is suppressed. Matches Settings.app's
-        // chrome where the title bar is left to the per-screen big title
-        // we render inside ContentScaffold.
-        if win.identifier?.rawValue.contains("main") == true,
-           win.titleVisibility != .hidden {
-            win.titleVisibility = .hidden
-        }
         if NSApp.activationPolicy() != .regular {
             NSApp.setActivationPolicy(.regular)
         }
@@ -504,23 +456,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
-    /// Intercept terminate so Cmd-Q / Dock → Quit *only* close the window.
-    /// The single real-quit path is the menubar status item's "Quit oMLX",
-    /// which routes through `requestQuit()` to set the explicit flag.
-    ///
-    /// Notes:
-    /// - We always cancel terminate when the explicit flag isn't set.
-    ///   SwiftUI's Window scene appears to dismiss the window before
-    ///   `applicationShouldTerminate` runs, so a "no visible windows"
-    ///   guard fires when we'd really want to keep cancelling.
-    /// - We use `close()`, not `performClose(_:)`. SwiftUI's window has a
-    ///   delegate that vetoes `windowShouldClose:` in some cases — `close()`
-    ///   bypasses that and reliably hides the window + fires
-    ///   `willClose`/`didClose` so the Dock-icon observer drops to
-    ///   `.accessory`.
+    /// Intercept terminate so Cmd-Q / Dock → Quit *only* close any visible
+    /// window. The single real-quit path is the menubar status item's
+    /// "Quit oMLX", which routes through `requestQuit()` to set the
+    /// explicit flag.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if explicitQuitRequested { return .terminateNow }
-        // Same close path used by the SwiftUI Cmd-Q command in oMLXApp.swift.
         hideWindowsAndDropDockIcon()
         return .terminateCancel
     }
@@ -536,14 +477,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Dock icon click while no window is visible: bring the main window
-    /// back. macOS calls this only when the user clicks the Dock icon of an
-    /// already-running app whose windows are all hidden. With our policy
-    /// of keeping the Dock icon up after a red-button close, this is the
-    /// canonical "re-open" path.
+    /// Dock icon click while no window is visible: open the web dashboard
+    /// when the server is up (the app's main surface now), otherwise just
+    /// activate the app.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            presentAppView()
+            if case .running = server?.state {
+                openWebAdmin()
+            } else {
+                NSApp.activate(ignoringOtherApps: true)
+            }
         }
         return true
     }

@@ -33,7 +33,6 @@ final class MenubarMetricItemsController: NSObject, NSPopoverDelegate {
 
     private var entries: [MenubarMetricsStore.Kind: ItemEntry] = [:]
     private let store: MenubarMetricsStore
-    private let openAppearanceSettings: () -> Void
     private let openDashboard: () -> Void
     /// Set by MenubarController to close the other controller's popovers so
     /// menubar dropdowns stay mutually exclusive.
@@ -41,11 +40,9 @@ final class MenubarMetricItemsController: NSObject, NSPopoverDelegate {
 
     init(
         store: MenubarMetricsStore,
-        openAppearanceSettings: @escaping () -> Void,
         openDashboard: @escaping () -> Void
     ) {
         self.store = store
-        self.openAppearanceSettings = openAppearanceSettings
         self.openDashboard = openDashboard
         super.init()
     }
@@ -164,10 +161,6 @@ final class MenubarMetricItemsController: NSObject, NSPopoverDelegate {
             rootView: MetricPopoverView(
                 kind: kind,
                 store: store,
-                openSettings: { [weak self] in
-                    self?.closeAllPopovers()
-                    self?.openAppearanceSettings()
-                },
                 openDashboard: { [weak self] in
                     self?.closeAllPopovers()
                     self?.openDashboard()

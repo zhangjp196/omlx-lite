@@ -7,9 +7,9 @@
 //
 // The backward case matters more: `BenchUploadStateDTO.skippedFeatures` is
 // non-optional, so if the server ever stopped sending that key, decoding the
-// whole `BenchResultsResponse` would throw. `ThroughputBenchScreenVM` polls
-// once per second for up to two minutes, so a decode failure there is not one
-// error — it is 120 of them.
+// whole `BenchResultsResponse` would throw. The results screen polls once per
+// second for up to two minutes, so a decode failure there is not one error —
+// it is 120 of them.
 
 import XCTest
 @testable import oMLX
@@ -54,15 +54,6 @@ final class BenchDTODecodeTests: XCTestCase {
         XCTAssertEqual(object["context_profile"] as? String, "novel_ko")
         XCTAssertEqual(object["warmup_mode"] as? String, "ane_2048")
         XCTAssertEqual(object["align_prompt_to_ane"] as? Bool, true)
-    }
-
-    @MainActor
-    func testThroughputContextDefaultsToPythonCode() {
-        let vm = ThroughputBenchScreenVM()
-        XCTAssertEqual(vm.contextProfile, .codePython)
-        XCTAssertEqual(vm.warmupMode, .quick)
-        XCTAssertFalse(vm.alignPromptToAne)
-        XCTAssertTrue(vm.exportText.hasPrefix("# Context: Code (Python)"))
     }
 
     func testDecodeResultsContextProfile() throws {

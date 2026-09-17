@@ -640,10 +640,10 @@ final class MenubarControllerPortTests: XCTestCase {
 
     // MARK: - menuAvailability
 
-    func testMenuAvailabilityKeepsSettingsEnabledWhenServerIsOffline() {
+    func testMenuAvailabilityDisablesSettingsWhenServerIsOffline() {
         for state in [ServerProcess.State.stopped, .failed(message: "Port 8000 in use")] {
             let availability = MenubarController.menuAvailability(for: state)
-            XCTAssertTrue(availability.settings)
+            XCTAssertFalse(availability.settings)
             XCTAssertFalse(availability.webDashboard)
             XCTAssertFalse(availability.chat)
         }
@@ -665,7 +665,7 @@ final class MenubarControllerPortTests: XCTestCase {
 
         for state in states {
             let availability = MenubarController.menuAvailability(for: state)
-            XCTAssertTrue(availability.settings)
+            XCTAssertFalse(availability.settings)
             XCTAssertFalse(availability.webDashboard)
             XCTAssertFalse(availability.chat)
         }

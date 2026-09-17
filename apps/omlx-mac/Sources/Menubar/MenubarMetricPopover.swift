@@ -1,15 +1,14 @@
 // Dropdown content for a menubar metric item: what the reading is, the
-// current PP/TG numbers, a rolling activity graph per series, and shortcuts
-// to the Appearance settings pane and the web dashboard. Hosted in an
-// NSPopover whose content controller only exists while the popover is open,
-// so a closed dropdown costs zero SwiftUI updates.
+// current PP/TG numbers, a rolling activity graph per series, and a
+// shortcut to the web dashboard. Hosted in an NSPopover whose content
+// controller only exists while the popover is open, so a closed dropdown
+// costs zero SwiftUI updates.
 
 import SwiftUI
 
 struct MetricPopoverView: View {
     let kind: MenubarMetricsStore.Kind
     let store: MenubarMetricsStore
-    let openSettings: () -> Void
     let openDashboard: () -> Void
 
     @Environment(\.omlxTheme) private var theme
@@ -53,38 +52,21 @@ struct MetricPopoverView: View {
 
             Divider().padding(.vertical, 2)
 
-            HStack(spacing: 8) {
-                Button {
-                    openSettings()
-                } label: {
-                    Label(
-                        String(
-                            localized: "menubar.metric.settings",
-                            defaultValue: "Settings",
-                            comment: "Button in a menubar metric popover that opens the Appearance settings pane"
-                        ),
-                        systemImage: "gearshape"
-                    )
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.omlx(.normal, size: .small))
-
-                Button {
-                    openDashboard()
-                } label: {
-                    Label(
-                        String(
-                            localized: "menubar.metric.dashboard",
-                            defaultValue: "Dashboard",
-                            comment: "Button in a menubar metric popover that opens the web dashboard"
-                        ),
-                        systemImage: "globe"
-                    )
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.omlx(.primary, size: .small))
-                .disabled(!store.serverIsRunning)
+            Button {
+                openDashboard()
+            } label: {
+                Label(
+                    String(
+                        localized: "menubar.metric.dashboard",
+                        defaultValue: "Dashboard",
+                        comment: "Button in a menubar metric popover that opens the web dashboard"
+                    ),
+                    systemImage: "globe"
+                )
+                .frame(maxWidth: .infinity)
             }
+            .buttonStyle(.omlx(.primary, size: .small))
+            .disabled(!store.serverIsRunning)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)

@@ -1,8 +1,8 @@
-// The Status screen's System block surfaces three derived values that
-// each have a single point of failure: the thermal-state → severity
-// mapping, the GPU-utilization clamp, and the bytes → GB formatter used
-// in both row labels. These tests pin those mappings so an SDK roll or
-// a stray locale tweak can't change what the UI prints.
+// The menu bar's System block surfaces derived values that each have a
+// single point of failure: the thermal-state → severity mapping and the
+// bytes → GB formatter used in the row labels. These tests pin those
+// mappings so an SDK roll or a stray locale tweak can't change what the
+// UI prints.
 
 import XCTest
 @testable import oMLX
@@ -46,42 +46,6 @@ final class SystemMetricsTests: XCTestCase {
         XCTAssertEqual(SystemMetricsPoller.label(for: .critical), "Critical")
     }
 
-    // MARK: - GPU utilization clamp
-
-    @MainActor
-    func testGpuUtilizationClampedTo100WhenActiveExceedsMax() {
-        let vm = StatusScreenVM()
-        vm.maxConcurrent = 8
-        vm.stats = makeStats(active: 20)
-        XCTAssertEqual(vm.gpuUtilizationPercent, 100.0, accuracy: 0.001)
-    }
-
-    @MainActor
-    func testGpuUtilizationZeroWhenActiveZero() {
-        let vm = StatusScreenVM()
-        vm.maxConcurrent = 8
-        vm.stats = makeStats(active: 0)
-        XCTAssertEqual(vm.gpuUtilizationPercent, 0.0, accuracy: 0.001)
-    }
-
-    @MainActor
-    func testGpuUtilizationLinearInRange() {
-        let vm = StatusScreenVM()
-        vm.maxConcurrent = 8
-        vm.stats = makeStats(active: 4)
-        XCTAssertEqual(vm.gpuUtilizationPercent, 50.0, accuracy: 0.001)
-    }
-
-    @MainActor
-    func testGpuUtilizationHandlesZeroMaxByFloorOfOne() {
-        // The VM's max is 0 only transiently (between init and the
-        // settings load). The divisor floor of 1 prevents NaN.
-        let vm = StatusScreenVM()
-        vm.maxConcurrent = 0
-        vm.stats = makeStats(active: 0)
-        XCTAssertEqual(vm.gpuUtilizationPercent, 0.0, accuracy: 0.001)
-    }
-
     // MARK: - Byte formatters
 
     func testFormatBytesAsGbRoundsToOneDecimal() {
@@ -107,33 +71,5 @@ final class SystemMetricsTests: XCTestCase {
         let out = SystemMetricsPoller.formatBytesAsGB(bytes)
         XCTAssertTrue(out == "12.5" || out == "12.6",
                       "Unexpected rounding output: \(out)")
-    }
-
-    // MARK: - Helpers
-
-    private func makeStats(active: Int) -> StatsDTO {
-        StatsDTO(
-            totalTokensServed: 0,
-            totalCachedTokens: 0,
-            cacheEfficiency: 0,
-            totalPromptTokens: 0,
-            totalCompletionTokens: 0,
-            totalRequests: 0,
-            avgPrefillTps: 0,
-            avgGenerationTps: 0,
-            uptimeSeconds: 0,
-            host: nil,
-            port: nil,
-            apiKey: nil,
-            cliPrefix: nil,
-            activeModels: StatsDTO.ActiveModelsDTO(
-                models: [],
-                modelMemoryUsed: nil,
-                modelMemoryMax: nil,
-                totalActiveRequests: active,
-                totalWaitingRequests: 0
-            ),
-            runtimeCache: nil
-        )
     }
 }

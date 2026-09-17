@@ -76,6 +76,19 @@ struct EnabledSystemItems: Equatable, Sendable {
 enum MenuBarModelScope: String, CaseIterable, Sendable {
     case favoritesOnly = "favorites"
     case all = "all"
+
+    var menuTitle: String {
+        switch self {
+        case .favoritesOnly:
+            return String(localized: "menubar.prefs.model_scope.favorites_only",
+                          defaultValue: "Loaded & Favorites only",
+                          comment: "Menu Bar prefs choice limiting the Models submenu to loaded and favorite models")
+        case .all:
+            return String(localized: "menubar.prefs.model_scope.all",
+                          defaultValue: "All models",
+                          comment: "Menu Bar prefs choice listing the full model library in the Models submenu")
+        }
+    }
 }
 
 struct EnabledMetrics: Equatable, Sendable {

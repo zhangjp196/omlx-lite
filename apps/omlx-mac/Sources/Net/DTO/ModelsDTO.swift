@@ -80,6 +80,12 @@ extension ModelDTO {
         }
         return actualSizeFormatted ?? estimatedSizeFormatted ?? ""
     }
+
+    /// The title the model shows in menus and lists: the user-set name,
+    /// falling back to the per-model settings alias, then the raw id.
+    var displayTitle: String {
+        displayName ?? settings?.displayName ?? id
+    }
 }
 
 struct ModelSettingsDTO: Codable, Equatable, Sendable {

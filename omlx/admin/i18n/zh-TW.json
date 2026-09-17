@@ -1132,6 +1132,7 @@
   "chat.save_settings": "儲存設定",
   "chat.active_profile": "啟用的設定檔",
   "chat.active_model": "啟用的模型",
+  "chat.remote_badge": "遠端",
   "chat.thinking_label": "思考",
   "chat.thinking_progress": "思考中...",
   "chat.thinking_tokens": "思考 tokens",

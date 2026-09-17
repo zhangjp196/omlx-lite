@@ -159,6 +159,21 @@ def test_lazy_chat_creation_preserves_preconfigured_draft():
     assert "await this.startNewChat();" in clear_all
 
 
+def test_remote_models_are_badged_and_vision_is_detected():
+    html = _template()
+    assert "remoteModelMap" in html
+    assert "m.source_type === 'remote'" in html
+    assert "isRemoteModel(currentModel)" in html
+    assert "chat.remote_badge" in html
+
+    for locale_path in I18N_DIR.glob("*.json"):
+        translations = json.loads(locale_path.read_text())
+        assert (
+            "chat.remote_badge" in translations
+        ), f"{locale_path.name} is missing chat.remote_badge"
+        assert translations["chat.remote_badge"]
+
+
 def test_new_chat_strings_exist_in_every_locale():
     for locale_path in I18N_DIR.glob("*.json"):
         translations = json.loads(locale_path.read_text())

@@ -1132,6 +1132,7 @@
   "chat.save_settings": "Save Settings",
   "chat.active_profile": "Active Profile",
   "chat.active_model": "Active Model",
+  "chat.remote_badge": "원격",
   "chat.thinking_label": "Thinking",
   "chat.thinking_progress": "Thinking...",
   "chat.thinking_tokens": "Thinking tokens",

@@ -2,6 +2,7 @@
 """Tests for the remote model registry, chat routing, and admin endpoints."""
 
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -443,6 +444,85 @@ def test_resolve_model_id_remote_via_alias(saved_state, tmp_path):
     sm.set_settings("gpt", s)
     state.settings_manager = sm
     assert server.resolve_model_id("gpt-alias") == "gpt"
+
+
+# ---------------------------------------------------------------------------
+# /v1/models/status remote exposure
+# ---------------------------------------------------------------------------
+
+
+def _fake_pool():
+    pool = MagicMock()
+    pool.get_status.return_value = {
+        "final_ceiling": 0,
+        "current_model_memory": 0,
+        "model_count": 0,
+        "loaded_count": 0,
+        "load_seconds_per_gb_estimate": 0.0,
+        "load_time_observations": 0,
+        "models": [],
+    }
+    pool.resolve_model_id.side_effect = lambda model_id, sm=None: model_id
+    pool.get_entry.return_value = None
+    return pool
+
+
+def _sampling():
+    return SimpleNamespace(
+        max_tokens=8192, max_context_window=32768, max_context_window_policy=None
+    )
+
+
+@pytest.mark.asyncio
+async def test_models_status_includes_remote_vision_model(saved_state, tmp_path):
+    state = saved_state
+    mgr = RemoteModelManager(tmp_path)
+    mgr.add(
+        RemoteModelConfig(
+            id="remote-vlm",
+            base_url="https://x/v1",
+            model="vlm-1",
+            supports_vision=True,
+        )
+    )
+    state.remote_model_manager = mgr
+    state.settings_manager = None
+    state.engine_pool = _fake_pool()
+    state.sampling = _sampling()
+
+    status = await server.list_models_status(True)
+
+    entry = next(m for m in status["models"] if m["id"] == "remote-vlm")
+    assert entry["model_type"] == "vlm"
+    assert entry["source_type"] == "remote"
+    assert entry["engine_type"] == "remote"
+    assert entry["is_remote"] is True
+    assert entry["supports_vision"] is True
+
+
+@pytest.mark.asyncio
+async def test_models_status_remote_text_and_hidden_excluded(saved_state, tmp_path):
+    state = saved_state
+    mgr = RemoteModelManager(tmp_path)
+    mgr.add(RemoteModelConfig(id="remote-text", base_url="https://x/v1", model="t"))
+    mgr.add(RemoteModelConfig(id="remote-hidden", base_url="https://x/v1", model="h"))
+    sm = ModelSettingsManager(tmp_path)
+    hidden = sm.get_settings("remote-hidden")
+    hidden.is_hidden = True
+    sm.set_settings("remote-hidden", hidden)
+    state.remote_model_manager = mgr
+    state.settings_manager = sm
+    state.engine_pool = _fake_pool()
+    state.sampling = _sampling()
+
+    status = await server.list_models_status(True)
+
+    ids = {m["id"] for m in status["models"]}
+    assert "remote-text" in ids
+    assert "remote-hidden" not in ids
+    entry = next(m for m in status["models"] if m["id"] == "remote-text")
+    assert entry["model_type"] == "llm"
+    assert entry["supports_vision"] is False
 
 
 # ---------------------------------------------------------------------------

@@ -1132,6 +1132,7 @@
   "chat.save_settings": "Сохранить настройки",
   "chat.active_profile": "Активный профиль",
   "chat.active_model": "Активная модель",
+  "chat.remote_badge": "Удалённая",
   "chat.thinking_label": "Мышление",
   "chat.thinking_progress": "Мышление...",
   "chat.thinking_tokens": "Токены мышления",

@@ -3032,6 +3032,57 @@ async def list_models_status(_: bool = Depends(verify_api_key)):
         raise HTTPException(status_code=503, detail="Server not initialized")
 
     status = _server_state.engine_pool.get_status()
+
+    # Remote models (registered OpenAI-compatible endpoints) are never loaded
+    # locally, but they are listed here alongside local ones so UI clients can
+    # detect their capabilities — notably vision/image support — and badge them
+    # as remote in the chat model picker.
+    remote_mgr = _server_state.remote_model_manager
+    if remote_mgr is not None:
+        known_ids = {m["id"] for m in status["models"]}
+        sm = _server_state.settings_manager
+        for rc in remote_mgr.list_all(enabled_only=True):
+            ms = None
+            if sm is not None:
+                try:
+                    ms = sm.get_settings(rc.id)
+                except Exception:  # noqa: BLE001
+                    ms = None
+            if ms is not None and getattr(ms, "is_hidden", False):
+                continue
+            display_id = (getattr(ms, "model_alias", None) or rc.id) if ms else rc.id
+            if display_id in known_ids:
+                continue
+            status["models"].append(
+                {
+                    "id": display_id,
+                    "source_model_id": rc.id,
+                    "model_path": "",
+                    "loaded": True,
+                    "is_loading": False,
+                    "loading_started_at": None,
+                    "estimated_size": 0,
+                    "resident_estimated_size": 0,
+                    "distributed": False,
+                    "cluster": None,
+                    "actual_size": 0,
+                    "pinned": False,
+                    "engine_type": "remote",
+                    "model_type": "vlm" if rc.supports_vision else "llm",
+                    "config_model_type": "",
+                    "realtime_stt": False,
+                    "model_context_length": None,
+                    "is_helper": False,
+                    "thinking_default": None,
+                    "preserve_thinking_default": None,
+                    "source_type": "remote",
+                    "source_repo_id": None,
+                    "last_access": None,
+                    "is_remote": True,
+                    "supports_vision": bool(rc.supports_vision),
+                }
+            )
+
     for m in status["models"]:
         model_id = m["id"]
 

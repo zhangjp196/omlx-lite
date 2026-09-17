@@ -2297,6 +2297,13 @@ async def update_model_settings(
     if engine_pool is None or settings_manager is None:
         raise HTTPException(status_code=503, detail="Server not initialized")
 
+    # Remote models have no local engine; update only the portable settings.
+    from ..remote_models import get_remote_model_manager
+
+    remote_mgr = get_remote_model_manager()
+    if remote_mgr is not None and remote_mgr.get(model_id) is not None:
+        return _update_remote_model_settings(model_id, request, settings_manager)
+
     # Check if model exists
     entry = engine_pool.get_entry(model_id)
     if entry is None:
@@ -3013,6 +3020,290 @@ async def update_model_settings(
         "requires_reload": requires_reload,
         "auto_unloaded": auto_unloaded,
         "auto_reloaded": auto_reloaded,
+    }
+
+
+class RemoteModelRequest(BaseModel):
+    """Request body for creating/updating a registered remote model."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    display_name: str = ""
+    base_url: str
+    api_key: str = ""
+    model: str
+    extra_body: dict[str, Any] = Field(default_factory=dict)
+    enabled: bool = True
+    supports_vision: bool = False
+
+
+@router.get("/api/remote-models")
+async def list_remote_models(_: bool = Depends(require_admin)) -> list[dict[str, Any]]:
+    """List all registered remote models, with their portable settings."""
+    from ..remote_models import get_remote_model_manager
+
+    manager = get_remote_model_manager()
+    if manager is None:
+        return []
+    settings_manager = _get_settings_manager()
+    entries: list[dict[str, Any]] = []
+    for rc in manager.list_all():
+        ms = None
+        if settings_manager is not None:
+            try:
+                ms = settings_manager.get_settings(rc.id)
+            except Exception:  # noqa: BLE001
+                ms = None
+        entry = rc.to_public_dict(include_api_key=True)
+        entry["source_type"] = "remote"
+        entry["settings"] = ms.to_dict() if ms is not None else {}
+        entries.append(entry)
+    return entries
+
+
+@router.post("/api/remote-models")
+async def create_remote_model(
+    request: RemoteModelRequest,
+    _: bool = Depends(require_admin),
+) -> dict[str, Any]:
+    """Register a new remote (OpenAI-compatible) model endpoint."""
+    from ..remote_models import RemoteModelConfig, get_remote_model_manager
+
+    manager = get_remote_model_manager()
+    if manager is None:
+        raise HTTPException(status_code=503, detail="Server not initialized")
+    try:
+        config = RemoteModelConfig(
+            id=request.id,
+            display_name=request.display_name,
+            base_url=request.base_url,
+            api_key=request.api_key,
+            model=request.model,
+            extra_body=request.extra_body,
+            enabled=request.enabled,
+            supports_vision=request.supports_vision,
+        )
+        manager.add(config)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return config.to_public_dict(include_api_key=True)
+
+
+@router.put("/api/remote-models/{model_id}")
+async def update_remote_model(
+    model_id: str,
+    request: RemoteModelRequest,
+    _: bool = Depends(require_admin),
+) -> dict[str, Any]:
+    """Update an existing registered remote model endpoint."""
+    from ..remote_models import get_remote_model_manager
+
+    manager = get_remote_model_manager()
+    if manager is None:
+        raise HTTPException(status_code=503, detail="Server not initialized")
+    if manager.get(model_id) is None:
+        raise HTTPException(status_code=404, detail=f"Remote model not found: {model_id}")
+    try:
+        config = manager.update(
+            model_id,
+            {
+                "id": request.id,
+                "display_name": request.display_name,
+                "base_url": request.base_url,
+                "api_key": request.api_key,
+                "model": request.model,
+                "extra_body": request.extra_body,
+                "enabled": request.enabled,
+                "supports_vision": request.supports_vision,
+            },
+        )
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return config.to_public_dict(include_api_key=True)
+
+
+@router.delete("/api/remote-models/{model_id}")
+async def delete_remote_model(
+    model_id: str,
+    _: bool = Depends(require_admin),
+) -> dict[str, Any]:
+    """Remove a registered remote model."""
+    from ..remote_models import get_remote_model_manager
+
+    manager = get_remote_model_manager()
+    if manager is None:
+        raise HTTPException(status_code=503, detail="Server not initialized")
+    if manager.delete(model_id):
+        return {"success": True, "message": f"Remote model '{model_id}' deleted"}
+    raise HTTPException(status_code=404, detail=f"Remote model not found: {model_id}")
+
+
+@router.post("/api/remote-models/{model_id}/test")
+async def test_remote_model(
+    model_id: str,
+    _: bool = Depends(require_admin),
+) -> dict[str, Any]:
+    """Test connectivity to a registered remote endpoint and report its speed."""
+    from ..remote_models import (
+        RemoteChatError,
+        get_remote_model_manager,
+        make_chat_client,
+    )
+
+    manager = get_remote_model_manager()
+    if manager is None:
+        raise HTTPException(status_code=503, detail="Server not initialized")
+    config = manager.get(model_id)
+    if config is None:
+        raise HTTPException(status_code=404, detail=f"Remote model not found: {model_id}")
+
+    messages = [{"role": "user", "content": "Reply with OK."}]
+    started = time.perf_counter()
+    first_token_at: float | None = None
+    completion_tokens = 0
+    prompt_tokens = 0
+    content_chunks = 0
+    stream_error: Exception | None = None
+
+    client = make_chat_client(config)
+    try:
+        async for raw in client.stream(
+            messages, max_tokens=16, temperature=0.0, top_p=1.0
+        ):
+            if first_token_at is None:
+                first_token_at = time.perf_counter()
+            has_content = False
+            for choice in raw.get("choices") or []:
+                delta = choice.get("delta") or {}
+                if delta.get("content") or delta.get("reasoning_content") or delta.get("reasoning"):
+                    has_content = True
+            if has_content:
+                content_chunks += 1
+            usage = raw.get("usage") or {}
+            if usage.get("completion_tokens"):
+                completion_tokens = int(usage["completion_tokens"])
+            if usage.get("prompt_tokens"):
+                prompt_tokens = int(usage["prompt_tokens"])
+    except Exception as exc:  # noqa: BLE001
+        stream_error = exc
+    finally:
+        await client.aclose()
+
+    if stream_error is not None or first_token_at is None:
+        # Some endpoints do not support streaming (or reject stream_options);
+        # fall back to a plain call reporting round-trip latency only.
+        client = make_chat_client(config)
+        try:
+            result = await client.chat(
+                messages, max_tokens=16, temperature=0.0, top_p=1.0
+            )
+        except RemoteChatError as exc:
+            return {
+                "success": False,
+                "error": exc.detail,
+                "status_code": exc.status_code,
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {"success": False, "error": str(exc)}
+        finally:
+            await client.aclose()
+        finished = time.perf_counter()
+        usage = result.get("usage") or {}
+        completion_tokens = int(usage.get("completion_tokens") or completion_tokens or 0)
+        prompt_tokens = int(usage.get("prompt_tokens") or prompt_tokens or 0)
+        return {
+            "success": True,
+            "message": f"Connected to {config.model}",
+            "latency_ms": round((finished - started) * 1000, 1),
+            "total_ms": round((finished - started) * 1000, 1),
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "tokens_per_sec": None,
+        }
+
+    finished = time.perf_counter()
+    latency_ms = round((first_token_at - started) * 1000, 1)
+    total_ms = round((finished - started) * 1000, 1)
+    if not completion_tokens:
+        completion_tokens = content_chunks
+    generation_seconds = max(finished - first_token_at, 1e-6)
+    tokens_per_sec = (
+        round(completion_tokens / generation_seconds, 1) if completion_tokens else None
+    )
+    return {
+        "success": True,
+        "message": f"Connected to {config.model}",
+        "latency_ms": latency_ms,
+        "total_ms": total_ms,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "tokens_per_sec": tokens_per_sec,
+    }
+
+
+def _update_remote_model_settings(
+    model_id: str,
+    request: "ModelSettingsRequest",
+    settings_manager,
+) -> dict[str, Any]:
+    """Update portable per-model settings for a registered remote model.
+
+    Remote models have no local engine, so only the settings that affect chat
+    routing and the model list are applied.
+    """
+    current_settings = settings_manager.get_settings(model_id)
+    sent = request.model_fields_set
+
+    if "model_alias" in sent:
+        alias_value = request.model_alias.strip() if request.model_alias else None
+        if alias_value == "":
+            alias_value = None
+        if alias_value is not None:
+            for mid, ms in settings_manager.get_all_settings().items():
+                if mid != model_id and ms.model_alias == alias_value:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Alias '{alias_value}' is already used by model '{mid}'",
+                    )
+        current_settings.model_alias = alias_value
+
+    for field_name in (
+        "max_context_window",
+        "max_tokens",
+        "temperature",
+        "top_p",
+        "top_k",
+        "repetition_penalty",
+        "min_p",
+        "presence_penalty",
+        "force_sampling",
+        "enable_thinking",
+        "thinking_budget_enabled",
+        "thinking_budget_tokens",
+    ):
+        if field_name in sent:
+            setattr(current_settings, field_name, getattr(request, field_name))
+
+    if request.is_pinned is not None:
+        current_settings.is_pinned = request.is_pinned
+    if request.is_default is not None:
+        current_settings.is_default = request.is_default
+    if request.is_hidden is not None:
+        current_settings.is_hidden = request.is_hidden
+    if request.is_favorite is not None:
+        current_settings.is_favorite = request.is_favorite
+
+    settings_manager.set_settings(model_id, current_settings)
+    return {
+        "success": True,
+        "model_id": model_id,
+        "settings": current_settings.to_dict(),
+        "model_type": "llm",
+        "engine_type": "remote",
+        "requires_reload": False,
+        "auto_unloaded": False,
+        "auto_reloaded": False,
     }
 
 

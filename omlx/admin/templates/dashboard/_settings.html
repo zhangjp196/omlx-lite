@@ -19,6 +19,15 @@
                 >
                     {{ t('settings.tab.models') }}
                 </button>
+                <button
+                    @click="setSettingsTab('remote')"
+                    :class="activeTab === 'remote'
+                        ? 'bg-neutral-900 text-white'
+                        : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'"
+                    class="px-5 py-2.5 rounded-full text-sm font-medium transition-all duration-200"
+                >
+                    {{ t('settings.tab.remote') }}
+                </button>
             </div>
 
             <!-- Global Settings Tab -->
@@ -435,10 +444,12 @@
                                             {{ t('settings.resource.hot_cache_description') }}
                                             <br>
                                             {{ t('settings.resource.hot_cache_zero_note') }} <strong>{{ t('settings.resource.hot_cache_disabled') }}</strong> {{ t('settings.resource.hot_cache_disabled_label') }}
+                                            <br>
+                                            <span x-text="window.t('settings.resource.cache_max_note').replace('{gb}', hotCacheMaxGB)"></span>
                                         </p>
                                     </div>
                                     <div class="flex flex-wrap items-center gap-2 sm:gap-3">
-                                        <input type="range" min="0" max="50" step="1"
+                                        <input type="range" min="0" :max="hotCacheMaxPercent" step="1"
                                                x-model.number="hotCachePercent"
                                                @input="updateHotCacheFromSlider()"
                                                class="w-32 h-1.5 bg-neutral-200 rounded-full appearance-none cursor-pointer
@@ -457,6 +468,7 @@
                                                    x-init="if (editingHotCache) { $nextTick(() => $el.focus()) }"
                                                    class="w-12 px-1 text-sm text-right border border-neutral-900 rounded focus:outline-none"
                                                    min="0"
+                                                   max="372"
                                                    step="1"><span class="text-neutral-400">GB)</span>
                                         </span>
                                     </div>
@@ -467,10 +479,12 @@
                                         <label class="text-sm text-neutral-700">{{ t('settings.resource.cold_cache_limit') }}</label>
                                         <p class="text-xs text-neutral-400 mt-0.5">
                                             {{ t('settings.resource.cold_cache_description') }}
+                                            <br>
+                                            <span x-text="window.t('settings.resource.cache_max_note').replace('{gb}', cacheMaxGB)"></span>
                                         </p>
                                     </div>
                                     <div class="flex flex-wrap items-center gap-2 sm:gap-3">
-                                        <input type="range" min="0" max="100" step="1"
+                                        <input type="range" min="0" :max="cacheMaxPercent" step="1"
                                                x-model.number="cachePercent"
                                                @input="updateCacheFromSlider()"
                                                class="w-32 h-1.5 bg-neutral-200 rounded-full appearance-none cursor-pointer
@@ -489,6 +503,7 @@
                                                    x-init="if (editingCache) { $nextTick(() => $el.focus()) }"
                                                    class="w-12 px-1 text-sm text-right border border-neutral-900 rounded focus:outline-none"
                                                    min="0"
+                                                   max="372"
                                                    step="1"><span class="text-neutral-400">GB)</span>
                                         </span>
                                     </div>
@@ -1507,6 +1522,75 @@
                                 </div>
                             </template>
                         </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== REMOTE MODEL SETTINGS TAB ==================== -->
+            <div x-show="activeTab === 'remote'" x-cloak>
+                <div class="animate-fade-in-up">
+                    <!-- Header -->
+                    <div class="mb-8">
+                        <h2 class="text-xs font-bold uppercase tracking-widest text-neutral-400 mb-2">{{ t('settings.remote.section_label') }}</h2>
+                        <div class="flex items-center gap-3">
+                            <h3 class="text-2xl font-bold tracking-tight text-neutral-900">{{ t('settings.remote.heading') }}</h3>
+                            <button @click="loadRemoteModels()"
+                                    class="px-3 py-1.5 text-xs font-medium text-neutral-500 hover:text-neutral-700 hover:bg-neutral-100 rounded-lg transition-all flex items-center gap-1.5">
+                                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                                {{ t('settings.remote.refresh') }}
+                            </button>
+                        </div>
+                        <p class="text-sm text-neutral-500 mt-2">{{ t('settings.remote.description') }}</p>
+                    </div>
+
+                    <!-- Empty state -->
+                    <div x-show="remoteModels.length === 0" class="bg-white rounded-2xl border border-neutral-200 p-12 text-center">
+                        <div class="w-16 h-16 bg-neutral-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                            <i data-lucide="globe" class="w-8 h-8 text-neutral-400"></i>
+                        </div>
+                        <h4 class="text-lg font-semibold text-neutral-900 mb-2">{{ t('settings.remote.empty_heading') }}</h4>
+                        <p class="text-sm text-neutral-500">{{ t('settings.remote.empty_description') }}</p>
+                    </div>
+
+                    <!-- Remote Models Table -->
+                    <div x-show="remoteModels.length > 0" x-cloak class="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <div class="flex items-center gap-4 px-4 sm:px-6 py-3 bg-neutral-50 border-b border-neutral-200 text-xs font-bold uppercase tracking-wider text-neutral-500">
+                                <div class="flex-1 min-w-0">{{ t('settings.remote.table.model') }}</div>
+                                <div class="hidden sm:flex w-40 justify-center">{{ t('settings.remote.table.alias') }}</div>
+                                <div class="hidden sm:flex w-24 justify-center">{{ t('settings.remote.table.context') }}</div>
+                                <div class="hidden sm:flex w-24 justify-center">{{ t('settings.remote.table.temp') }}</div>
+                                <div class="w-12 text-center"></div>
+                            </div>
+                            <div class="divide-y divide-neutral-100">
+                                <template x-for="rm in remoteModels" :key="rm.id">
+                                    <div class="hover:bg-neutral-50 transition-colors">
+                                        <div class="flex items-center gap-4 px-6 py-4">
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-sm font-medium text-neutral-900 break-all sm:truncate" x-text="rm.display_name || rm.id"></p>
+                                                <p class="text-xs text-neutral-400 font-mono truncate" x-text="rm.id"></p>
+                                            </div>
+                                            <div class="hidden sm:flex w-40 justify-center">
+                                                <span class="text-xs text-neutral-500 font-mono truncate" x-text="(rm.settings && rm.settings.model_alias) || '-'"></span>
+                                            </div>
+                                            <div class="hidden sm:flex w-24 justify-center">
+                                                <span class="text-xs text-neutral-500" x-text="(rm.settings && rm.settings.max_context_window) || '-'"></span>
+                                            </div>
+                                            <div class="hidden sm:flex w-24 justify-center">
+                                                <span class="text-xs text-neutral-500" x-text="(rm.settings && rm.settings.temperature != null) ? rm.settings.temperature : '-'"></span>
+                                            </div>
+                                            <div class="w-12 text-center">
+                                                <button @click="openModelSettings(rm)"
+                                                        class="p-2 text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors"
+                                                        :title="window.t('settings.remote.open_settings')">
+                                                    <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
                         </div>
                     </div>
                 </div>

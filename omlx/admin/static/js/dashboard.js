@@ -29,11 +29,13 @@
         'muse_glimmer_assistant',
     ]);
     const DASHBOARD_MAIN_TABS = new Set(['status', 'cluster', 'settings', 'models', 'logs', 'bench']);
-    const DASHBOARD_SETTINGS_TABS = new Set(['global', 'models']);
-    const DASHBOARD_MODELS_TABS = new Set(['manager', 'downloader']);
+    const DASHBOARD_SETTINGS_TABS = new Set(['global', 'models', 'remote']);
+    const DASHBOARD_MODELS_TABS = new Set(['manager', 'downloader', 'remote']);
     const DASHBOARD_BENCH_TABS = new Set(['throughput', 'accuracy', 'context']);
     const THEME_STORAGE_KEY = 'omlx-chat-theme';
     const ENHANCED_READABILITY_KEY = 'omlx-enhanced-readability';
+    // Hard cap for the hot (memory) and cold (SSD) KV-cache limits.
+    const CACHE_MAX_GB = 372;
 
     // Default sort for the settings and manager model tables. Also the target
     // state for the "reset sort" action.
@@ -50,6 +52,8 @@
 
             // Mobile menu
             mobileMenuOpen: false,
+
+            tip: { visible: false, text: '', x: 0, y: 0 },
 
             // Main tab state (Status, Settings, or Logs)
             mainTab: 'status',
@@ -110,6 +114,28 @@
             managerSortBy: localStorage.getItem('omlx_manager_sort_by') || MANAGER_SORT_DEFAULT.by,
             managerSortOrder: localStorage.getItem('omlx_manager_sort_order') || MANAGER_SORT_DEFAULT.order,
             managerSearch: '',
+
+            // Remote models (registered OpenAI-compatible endpoints)
+            remoteModels: [],
+            remoteSearch: '',
+            showRemoteModal: false,
+            editingRemoteId: null,
+            remoteForm: {
+                id: '',
+                display_name: '',
+                base_url: '',
+                api_key: '',
+                model: '',
+                extra_body: '',
+                enabled: true,
+                supports_vision: false,
+            },
+            remoteFormError: '',
+            remoteSaving: false,
+            remoteTestStatus: {},
+            remoteTestError: {},
+            remoteTestInfo: {},
+            remoteTestBusy: false,
 
             // Auth UI state
             showApiKey: false,
@@ -519,6 +545,7 @@
                 await Promise.all([
                     this.loadGlobalSettings(),
                     this.loadModels(),
+                    this.loadRemoteModels(),
                     this.loadServerInfo(),
                     this.checkForUpdate()
                 ]);
@@ -761,9 +788,12 @@
                         }
 
                         // Calculate cache percent from stored value (based on total capacity)
-                        this.cachePercent = this.parseCacheToPercent(
-                            this.globalSettings.cache.ssd_cache_max_size,
-                            this.globalSettings.system.ssd_total_bytes
+                        this.cachePercent = Math.min(
+                            this.cacheMaxPercent,
+                            this.parseCacheToPercent(
+                                this.globalSettings.cache.ssd_cache_max_size,
+                                this.globalSettings.system.ssd_total_bytes
+                            )
                         );
                         // Sync the cache string value from percent
                         this.updateCacheFromSlider();
@@ -772,9 +802,12 @@
                         this.globalSettings.cache.hot_cache_max_size = this.normalizeHotCacheMaxSize(
                             this.globalSettings.cache.hot_cache_max_size
                         );
-                        this.hotCachePercent = this.parseHotCacheToPercent(
-                            this.globalSettings.cache.hot_cache_max_size,
-                            this.globalSettings.system.total_memory_bytes
+                        this.hotCachePercent = Math.min(
+                            this.hotCacheMaxPercent,
+                            this.parseHotCacheToPercent(
+                                this.globalSettings.cache.hot_cache_max_size,
+                                this.globalSettings.system.total_memory_bytes
+                            )
                         );
                     } else if (response.status === 401) {
                         window.location.href = '/admin';
@@ -1022,6 +1055,190 @@
                     console.error('Failed to load models:', err);
                 } finally {
                     this.loadingModels = false;
+                }
+            },
+
+            showTip(el, text) {
+                const rect = el.getBoundingClientRect();
+                this.tip.text = text;
+                this.tip.x = rect.left + rect.width / 2;
+                this.tip.y = rect.top - 8;
+                this.tip.visible = true;
+                this.$nextTick(() => {
+                    const node = this.$refs.tipEl;
+                    if (!node) return;
+                    this.tip.y = rect.top - node.offsetHeight - 8;
+                    const w = node.offsetWidth;
+                    let x = rect.left + rect.width / 2;
+                    if (x - w / 2 < 8) x = 8 + w / 2;
+                    if (x + w / 2 > window.innerWidth - 8) x = window.innerWidth - 8 - w / 2;
+                    this.tip.x = x;
+                });
+            },
+
+            hideTip() {
+                this.tip.visible = false;
+            },
+
+            profileTooltip(profile) {
+                return profile?.description || profile?.name || '';
+            },
+
+            matchedPreset(settings) {
+                return null;
+            },
+
+            async loadRemoteModels() {
+                try {
+                    const response = await fetch('/admin/api/remote-models');
+                    if (response.ok) {
+                        this.remoteModels = await response.json();
+                    } else if (response.status === 401) {
+                        window.location.href = '/admin';
+                    }
+                } catch (err) {
+                    console.error('Failed to load remote models:', err);
+                }
+            },
+
+            openRemoteForm(model) {
+                this.remoteFormError = '';
+                if (model) {
+                    this.editingRemoteId = model.id;
+                    this.remoteForm = {
+                        id: model.id,
+                        display_name: model.display_name || '',
+                        base_url: model.base_url || '',
+                        api_key: model.api_key || '',
+                        model: model.model || '',
+                        extra_body: model.extra_body && Object.keys(model.extra_body).length
+                            ? JSON.stringify(model.extra_body, null, 2)
+                            : '',
+                        enabled: model.enabled !== false,
+                        supports_vision: model.supports_vision === true,
+                    };
+                } else {
+                    this.editingRemoteId = null;
+                    this.remoteForm = {
+                        id: '',
+                        display_name: '',
+                        base_url: '',
+                        api_key: '',
+                        model: '',
+                        extra_body: '',
+                        enabled: true,
+                        supports_vision: false,
+                    };
+                }
+                this.showRemoteModal = true;
+            },
+
+            closeRemoteForm() {
+                this.showRemoteModal = false;
+                this.editingRemoteId = null;
+                this.remoteFormError = '';
+            },
+
+            async saveRemoteModel() {
+                if (this.remoteSaving) return;
+                this.remoteFormError = '';
+                const form = this.remoteForm;
+                if (!form.id.trim() || !form.base_url.trim() || !form.model.trim()) {
+                    this.remoteFormError = window.t('js.remote_models.form_required');
+                    return;
+                }
+                let extraBody = {};
+                if (form.extra_body.trim()) {
+                    try {
+                        const parsed = JSON.parse(form.extra_body);
+                        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                            this.remoteFormError = window.t('js.remote_models.form_invalid_json');
+                            return;
+                        }
+                        extraBody = parsed;
+                    } catch (e) {
+                        this.remoteFormError = window.t('js.remote_models.form_invalid_json');
+                        return;
+                    }
+                }
+                this.remoteSaving = true;
+                try {
+                    const method = this.editingRemoteId ? 'PUT' : 'POST';
+                    const url = this.editingRemoteId
+                        ? `/admin/api/remote-models/${encodeURIComponent(this.editingRemoteId)}`
+                        : '/admin/api/remote-models';
+                    const response = await fetch(url, {
+                        method,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            id: form.id,
+                            display_name: form.display_name,
+                            base_url: form.base_url,
+                            api_key: form.api_key,
+                            model: form.model,
+                            extra_body: extraBody,
+                            enabled: form.enabled,
+                            supports_vision: form.supports_vision,
+                        }),
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok) {
+                        this.remoteFormError = data.detail || window.t('js.remote_models.save_failed');
+                        return;
+                    }
+                    this.showRemoteModal = false;
+                    await this.loadRemoteModels();
+                } catch (err) {
+                    this.remoteFormError = window.t('js.remote_models.save_failed');
+                } finally {
+                    this.remoteSaving = false;
+                }
+            },
+
+            async deleteRemoteModel(id) {
+                if (!window.confirm(window.t('js.remote_models.delete_confirm'))) return;
+                try {
+                    const response = await fetch(`/admin/api/remote-models/${encodeURIComponent(id)}`, {
+                        method: 'DELETE',
+                    });
+                    if (response.ok) {
+                        await this.loadRemoteModels();
+                    } else if (response.status === 401) {
+                        window.location.href = '/admin';
+                    }
+                } catch (err) {
+                    console.error('Failed to delete remote model:', err);
+                }
+            },
+
+            async testRemoteModel(id) {
+                this.remoteTestBusy = true;
+                this.remoteTestStatus[id] = 'testing';
+                delete this.remoteTestError[id];
+                delete this.remoteTestInfo[id];
+                try {
+                    const response = await fetch(`/admin/api/remote-models/${encodeURIComponent(id)}/test`, {
+                        method: 'POST',
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    this.remoteTestStatus[id] = data.success ? 'ok' : 'error';
+                    if (!data.success) {
+                        this.remoteTestError[id] = data.error || 'Unknown error';
+                    } else {
+                        delete this.remoteTestError[id];
+                        this.remoteTestInfo[id] = {
+                            latency_ms: data.latency_ms,
+                            total_ms: data.total_ms,
+                            prompt_tokens: data.prompt_tokens,
+                            completion_tokens: data.completion_tokens,
+                            tokens_per_sec: data.tokens_per_sec,
+                        };
+                    }
+                } catch (err) {
+                    this.remoteTestStatus[id] = 'error';
+                    this.remoteTestError[id] = String(err);
+                } finally {
+                    this.remoteTestBusy = false;
                 }
             },
 
@@ -2813,6 +3030,15 @@
                 localStorage.setItem('omlx_bench_external_model', this.externalModel.trim());
             },
 
+            applyBenchRemoteModel(id) {
+                const rm = this.remoteModels.find((m) => m.id === id);
+                if (!rm) return;
+                this.externalBaseUrl = rm.base_url;
+                this.externalApiKey = rm.api_key || '';
+                this.externalModel = rm.model;
+                this.saveExternalEndpoint();
+            },
+
             externalConfigValid() {
                 return !!(this.externalBaseUrl.trim() && this.externalModel.trim());
             },
@@ -4149,7 +4375,7 @@
             percentToCacheString(percent, totalBytes) {
                 if (!totalBytes || totalBytes === 0) return 'auto';
                 const bytes = Math.floor((percent / 100) * totalBytes);
-                const gb = Math.floor(bytes / (1024 * 1024 * 1024));
+                const gb = Math.min(CACHE_MAX_GB, Math.floor(bytes / (1024 * 1024 * 1024)));
                 return `${gb}GB`;
             },
 
@@ -4330,6 +4556,40 @@
                     .replace('{ceiling}', bold(ceiling));
             },
 
+            // Slider upper bounds derived from the 372GB hard cap. `ceil` keeps
+            // the bound inclusive so the slider can actually reach the cap.
+            get hotCacheMaxPercent() {
+                const totalBytes = this.globalSettings.system?.total_memory_bytes || 0;
+                if (!totalBytes) return 50;
+                const pct = Math.ceil(((CACHE_MAX_GB * 1024 * 1024 * 1024) / totalBytes) * 100);
+                return Math.max(1, Math.min(50, pct));
+            },
+
+            get cacheMaxPercent() {
+                const totalBytes = this.globalSettings.system?.ssd_total_bytes || 0;
+                if (!totalBytes) return 100;
+                const pct = Math.ceil(((CACHE_MAX_GB * 1024 * 1024 * 1024) / totalBytes) * 100);
+                return Math.max(1, Math.min(100, pct));
+            },
+
+            get hotCacheMaxGB() {
+                const totalBytes = this.globalSettings.system?.total_memory_bytes || 0;
+                if (!totalBytes) return CACHE_MAX_GB;
+                return Math.min(
+                    CACHE_MAX_GB,
+                    Math.floor((this.hotCacheMaxPercent / 100) * totalBytes / (1024 * 1024 * 1024))
+                );
+            },
+
+            get cacheMaxGB() {
+                const totalBytes = this.globalSettings.system?.ssd_total_bytes || 0;
+                if (!totalBytes) return CACHE_MAX_GB;
+                return Math.min(
+                    CACHE_MAX_GB,
+                    Math.floor((this.cacheMaxPercent / 100) * totalBytes / (1024 * 1024 * 1024))
+                );
+            },
+
             // Computed hot cache size in GB (for manual input)
             get hotCacheSizeGB() {
                 const val = this.globalSettings.cache?.hot_cache_max_size;
@@ -4345,7 +4605,7 @@
 
             // Update hot cache from manual GB input
             updateHotCacheFromInput(gbValue) {
-                const gb = parseInt(gbValue) || 0;
+                const gb = Math.min(CACHE_MAX_GB, parseInt(gbValue) || 0);
                 if (gb === 0) {
                     this.hotCachePercent = 0;
                     this.globalSettings.cache.hot_cache_max_size = '0';
@@ -4380,7 +4640,7 @@
 
             // Update cache from manual GB input
             updateCacheFromInput(gbValue) {
-                const gb = parseInt(gbValue) || 0;
+                const gb = Math.min(CACHE_MAX_GB, parseInt(gbValue) || 0);
                 this.globalSettings.cache.ssd_cache_max_size = `${gb}GB`;
 
                 // Update percent slider
@@ -4422,7 +4682,7 @@
                 } else {
                     const totalBytes = this.globalSettings.system?.total_memory_bytes || 0;
                     const bytes = Math.floor((this.hotCachePercent / 100) * totalBytes);
-                    const gb = Math.floor(bytes / (1024 * 1024 * 1024));
+                    const gb = Math.min(CACHE_MAX_GB, Math.floor(bytes / (1024 * 1024 * 1024)));
                     this.globalSettings.cache.hot_cache_max_size = gb > 0 ? `${gb}GB` : '0';
                 }
             },
@@ -4479,8 +4739,20 @@
                     }
 
                     if (aVal < bVal) return this.sortOrder === 'asc' ? -1 : 1;
-                    if (aVal > bVal) return this.sortOrder === 'asc' ? 1 : -1;
+                    if (aVal > bVal) return this.sortOrder === 'desc' ? 1 : -1;
                     return 0;
+                });
+            },
+
+            get remoteModelsFiltered() {
+                const query = (this.remoteSearch || '').trim().toLowerCase();
+                if (!query) return this.remoteModels;
+                return this.remoteModels.filter((m) => {
+                    const hay = [m.id, m.display_name, m.base_url, m.model]
+                        .filter(Boolean)
+                        .join(' ')
+                        .toLowerCase();
+                    return hay.includes(query);
                 });
             },
 

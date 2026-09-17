@@ -108,6 +108,16 @@
                                             </span>
                                         </label>
                                         <div x-show="accExternalEnabled" x-cloak class="mt-3 space-y-3 pl-6">
+                                            <div x-show="remoteModels.length > 0" x-cloak class="flex items-center gap-2">
+                                                <label class="text-xs font-medium text-neutral-600 whitespace-nowrap">{{ t('bench.config.use_remote_model') }}</label>
+                                                <select @change="applyBenchRemoteModel($event.target.value)"
+                                                        class="flex-1 max-w-md px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:ring-2 focus:ring-neutral-900 focus:border-transparent bg-white">
+                                                    <option value="">{{ t('bench.config.select_remote_model') }}</option>
+                                                    <template x-for="rm in remoteModels.filter(m => m.enabled !== false)" :key="rm.id">
+                                                        <option :value="rm.id" x-text="rm.display_name || rm.id"></option>
+                                                    </template>
+                                                </select>
+                                            </div>
                                             <div>
                                                 <label class="block text-xs font-medium text-neutral-600 mb-1">{{ t('bench.config.external_base_url') }}</label>
                                                 <input type="url"

@@ -51,7 +51,7 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi import Request as FastAPIRequest
@@ -60,6 +60,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+import httpx
 
 from omlx._version import __version__
 
@@ -257,6 +258,7 @@ class ServerState:
     bind_host: str | None = None
     settings_manager: Optional[object] = None  # ModelSettingsManager
     global_settings: Optional[object] = None  # GlobalSettings
+    remote_model_manager: Optional[object] = None  # RemoteModelManager
     hf_downloader: Optional[object] = None  # HFDownloader
     ms_downloader: Optional[object] = None  # MSDownloader
     process_memory_enforcer: Optional[object] = None  # ProcessMemoryEnforcer
@@ -720,6 +722,12 @@ except ImportError:
 from .admin.auth import _RedirectToLogin, require_admin
 from .admin.routes import router as admin_router
 from .admin.routes import set_admin_getters
+from .remote_models import (
+    RemoteChatError,
+    init_remote_models,
+    make_chat_client,
+    remote_request_messages,
+)
 
 set_admin_getters(
     get_server_state,
@@ -1843,14 +1851,25 @@ def get_model_settings_for_request(model_id: str | None):
 def resolve_model_id(model_id: str | None) -> str | None:
     """Resolve a model alias to its real model ID.
 
-    Returns the resolved ID, or the original value if no alias match.
+    Returns the resolved ID, or the original value if no alias match. Registered
+    remote models (OpenAI-compatible endpoints) resolve to their gateway id,
+    including via a per-model alias.
     """
     if model_id is None:
         return None
     pool = _server_state.engine_pool
-    if pool is None:
-        return model_id
-    return pool.resolve_model_id(model_id, _server_state.settings_manager)
+    resolved = model_id
+    if pool is not None:
+        resolved = pool.resolve_model_id(model_id, _server_state.settings_manager)
+        if pool.get_entry(resolved) is not None:
+            return resolved
+    # Remote model fallback: match gateway id or a per-model alias.
+    remote_mgr = _server_state.remote_model_manager
+    if remote_mgr is not None:
+        remote = remote_mgr.resolve(model_id, _server_state.settings_manager)
+        if remote is not None:
+            return remote.id
+    return resolved
 
 
 async def _ensure_tokenizer_for_system_probe(
@@ -2123,6 +2142,7 @@ def init_server(
         Path(global_settings.base_path) if global_settings else Path.home() / ".omlx"
     )
     _server_state.settings_manager = ModelSettingsManager(base_path)
+    _server_state.remote_model_manager = init_remote_models(base_path)
 
     # Get pinned models from settings file only (managed via admin page)
     pinned_models = _server_state.settings_manager.get_pinned_model_ids()
@@ -2970,6 +2990,30 @@ async def list_models(_: bool = Depends(verify_api_key)) -> ModelsResponse:
                     max_model_len=get_max_context_window(model_id),
                 )
             )
+    # Remote models (registered OpenAI-compatible endpoints).
+    remote_mgr = _server_state.remote_model_manager
+    if remote_mgr is not None:
+        sm = _server_state.settings_manager
+        for rc in remote_mgr.list_all(enabled_only=True):
+            ms = None
+            if sm is not None:
+                try:
+                    ms = sm.get_settings(rc.id)
+                except Exception:  # noqa: BLE001
+                    ms = None
+            if ms is not None and getattr(ms, "is_hidden", False):
+                continue
+            display_id = (getattr(ms, "model_alias", None) or rc.id) if ms else rc.id
+            if ms is not None and getattr(ms, "is_favorite", False):
+                favorite_ids.add(display_id)
+            max_len = getattr(ms, "max_context_window", None) if ms else None
+            models.append(
+                ModelInfo(
+                    id=display_id,
+                    owned_by="omlx",
+                    max_model_len=max_len,
+                )
+            )
     # Favorites first; stable sort keeps alphabetical order within groups.
     if favorite_ids:
         models.sort(key=lambda m: m.id not in favorite_ids)
@@ -3522,6 +3566,188 @@ async def create_completion(
         raise
 
 
+def _remote_effective_params(
+    request: ChatCompletionRequest,
+    remote_id: str,
+) -> tuple[int | None, float | None, float | None]:
+    """Resolve (max_tokens, temperature, top_p) for a remote model.
+
+    Priority: request > per-model settings > global defaults.
+    """
+    ms = None
+    if _server_state.settings_manager is not None:
+        try:
+            ms = _server_state.settings_manager.get_settings(remote_id)
+        except Exception:  # noqa: BLE001
+            ms = None
+
+    max_tokens = request.max_tokens
+    if max_tokens is None and ms is not None and ms.max_tokens:
+        max_tokens = ms.max_tokens
+    if max_tokens is None:
+        max_tokens = _server_state.sampling.max_tokens
+
+    temperature = request.temperature
+    if temperature is None and ms is not None and ms.temperature is not None:
+        temperature = ms.temperature
+    if temperature is None:
+        temperature = _server_state.sampling.temperature
+
+    top_p = request.top_p
+    if top_p is None and ms is not None and ms.top_p is not None:
+        top_p = ms.top_p
+    if top_p is None:
+        top_p = _server_state.sampling.top_p
+
+    return max_tokens, temperature, top_p
+
+
+async def _create_remote_chat_completion(
+    request: ChatCompletionRequest,
+    remote_config: Any,
+    http_request: FastAPIRequest,
+) -> JSONResponse | StreamingResponse:
+    """Serve a chat completion by proxying to a registered remote endpoint."""
+    messages = remote_request_messages(
+        request.messages,
+        preserve_images=bool(getattr(remote_config, "supports_vision", False)),
+    )
+    max_tokens, temperature, top_p = _remote_effective_params(request, remote_config.id)
+    display_model = request.model or remote_config.id
+    client = make_chat_client(remote_config)
+
+    if request.stream:
+        response_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
+        return StreamingResponse(
+            _remote_stream_chat(
+                client,
+                messages,
+                display_model=display_model,
+                response_id=response_id,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+            ),
+            media_type="text/event-stream",
+            headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+        )
+
+    try:
+        result = await client.chat(
+            messages, max_tokens=max_tokens, temperature=temperature, top_p=top_p
+        )
+    except RemoteChatError as exc:
+        raise HTTPException(status_code=502, detail=exc.detail) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Remote endpoint unreachable: {exc}") from exc
+
+    try:
+        choice = (result.get("choices") or [{}])[0]
+        message = choice.get("message") or {}
+        content = message.get("content")
+        reasoning = message.get("reasoning_content") or message.get("reasoning")
+        usage = result.get("usage") or {}
+        payload = ChatCompletionResponse(
+            model=display_model,
+            choices=[
+                ChatCompletionChoice(
+                    message=AssistantMessage(
+                        content=content if content is not None else None,
+                        reasoning_content=reasoning if reasoning else None,
+                    ),
+                    finish_reason=choice.get("finish_reason") or "stop",
+                )
+            ],
+            usage=Usage(
+                prompt_tokens=int(usage.get("prompt_tokens", 0) or 0),
+                completion_tokens=int(usage.get("completion_tokens", 0) or 0),
+                total_tokens=int(usage.get("total_tokens", 0) or 0),
+            ),
+        ).model_dump_json(exclude_none=True)
+    finally:
+        await client.aclose()
+    return JSONResponse(content=json.loads(payload), media_type="application/json")
+
+
+async def _remote_stream_chat(
+    client: Any,
+    messages: list[dict[str, Any]],
+    *,
+    display_model: str,
+    response_id: str,
+    max_tokens: int | None,
+    temperature: float | None,
+    top_p: float | None,
+) -> AsyncIterator[str]:
+    """Translate a remote endpoint's SSE stream into omlx OpenAI chunks."""
+    first_chunk = ChatCompletionChunk(
+        id=response_id,
+        model=display_model,
+        choices=[ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(role="assistant"))],
+    )
+    yield f"data: {first_chunk.model_dump_json(exclude_none=True)}\n\n"
+
+    usage = None
+    try:
+        async for raw in client.stream(
+            messages, max_tokens=max_tokens, temperature=temperature, top_p=top_p
+        ):
+            if raw.get("usage"):
+                usage = raw["usage"]
+            for choice in raw.get("choices") or []:
+                delta = choice.get("delta") or {}
+                content = delta.get("content")
+                if content:
+                    chunk = ChatCompletionChunk(
+                        id=response_id,
+                        model=display_model,
+                        choices=[
+                            ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(content=content))
+                        ],
+                    )
+                    yield f"data: {chunk.model_dump_json(exclude_none=True)}\n\n"
+                reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+                if reasoning:
+                    chunk = ChatCompletionChunk(
+                        id=response_id,
+                        model=display_model,
+                        choices=[
+                            ChatCompletionChunkChoice(
+                                delta=ChatCompletionChunkDelta(reasoning_content=reasoning)
+                            )
+                        ],
+                    )
+                    yield f"data: {chunk.model_dump_json(exclude_none=True)}\n\n"
+    except RemoteChatError as exc:
+        error_data = {"error": {"message": exc.detail, "type": "remote_error"}}
+        yield f"data: {json.dumps(error_data)}\n\n"
+        yield "data: [DONE]\n\n"
+        return
+    finally:
+        await client.aclose()
+
+    if usage:
+        final_usage = Usage(
+            prompt_tokens=int(usage.get("prompt_tokens", 0) or 0),
+            completion_tokens=int(usage.get("completion_tokens", 0) or 0),
+            total_tokens=int(usage.get("total_tokens", 0) or 0),
+        )
+    else:
+        final_usage = None
+    final_chunk = ChatCompletionChunk(
+        id=response_id,
+        model=display_model,
+        choices=[
+            ChatCompletionChunkChoice(
+                delta=ChatCompletionChunkDelta(), finish_reason="stop"
+            )
+        ],
+        usage=final_usage,
+    )
+    yield f"data: {final_chunk.model_dump_json(exclude_none=True)}\n\n"
+    yield "data: [DONE]\n\n"
+
+
 @app.post("/v1/chat/completions")
 async def create_chat_completion(
     request: ChatCompletionRequest,
@@ -3559,6 +3785,14 @@ async def create_chat_completion(
             logger.log(
                 5, "  Message[%d]: role=%s, content=%s...", i, msg.role, content_preview
             )
+
+    # Remote models: route the request straight to the registered
+    # OpenAI-compatible endpoint instead of a local engine.
+    remote_mgr = _server_state.remote_model_manager
+    if remote_mgr is not None:
+        remote_config = remote_mgr.resolve(request.model, _server_state.settings_manager)
+        if remote_config is not None and remote_config.enabled:
+            return await _create_remote_chat_completion(request, remote_config, http_request)
 
     lease = _LLMEngineLease()
     try:

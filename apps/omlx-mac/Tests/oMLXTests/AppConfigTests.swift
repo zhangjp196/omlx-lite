@@ -1,6 +1,6 @@
 // AppConfig invariants we rely on at runtime:
 //   • modelDir is always a literal path (never empty).
-//   • save() preserves unknown keys (e.g. cache, integrations, ui).
+//   • save() preserves unknown keys (e.g. cache, memory, ui).
 //   • defaultModelDir is `<basePath>/models`, no shell expansion games.
 //
 // Tests write to a per-test temp directory so they don't trample the user's
@@ -97,13 +97,12 @@ final class AppConfigTests: XCTestCase {
 
     func testSavePreservesUnknownKeys() throws {
         // Pre-populate settings.json with keys AppConfig doesn't own. These
-        // come from the running Python server (claude_code, integrations, ui,
-        // etc.) and must round-trip untouched through Swift saves.
+        // come from the running Python server (memory, ui, etc.) and must
+        // round-trip untouched through Swift saves.
         let url = AppConfig.settingsURL(basePath: tempBase)
         let original: [String: Any] = [
             "version": "1.0",
-            "claude_code": ["enabled": true, "model": "claude-opus-4-5"],
-            "integrations": ["github": ["token": "abc"]],
+            "memory": ["prefill_memory_guard": true, "memory_guard_tier": "balanced"],
             "ui": ["theme": "dark"],
             "server": ["host": "0.0.0.0", "bind_address": "0.0.0.0", "port": 1234],
             "model": [
@@ -130,8 +129,7 @@ final class AppConfigTests: XCTestCase {
         let after = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
 
         // Foreign top-level keys survive.
-        XCTAssertEqual((after["claude_code"] as! [String: Any])["model"] as! String, "claude-opus-4-5")
-        XCTAssertEqual((after["integrations"] as! [String: Any])["github"] as! [String: String], ["token": "abc"])
+        XCTAssertEqual((after["memory"] as! [String: Any])["memory_guard_tier"] as! String, "balanced")
         XCTAssertEqual((after["ui"] as! [String: Any])["theme"] as! String, "dark")
 
         // Unknown sub-keys under owned sections survive too — only the fields

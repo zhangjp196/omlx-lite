@@ -161,14 +161,6 @@ class PagedSSDCacheConfig:
 
 
 @dataclass
-class MCPConfig:
-    """MCP (Model Context Protocol) configuration."""
-
-    config_path: Optional[str] = None
-    enabled: bool = False
-
-
-@dataclass
 class OMLXConfig:
     """
     Centralized configuration for oMLX.
@@ -183,7 +175,6 @@ class OMLXConfig:
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     cache: CacheConfig = field(default_factory=CacheConfig)
     paged_ssd_cache: PagedSSDCacheConfig = field(default_factory=PagedSSDCacheConfig)
-    mcp: MCPConfig = field(default_factory=MCPConfig)
 
     # Feature flags
     continuous_batching: bool = False
@@ -244,12 +235,6 @@ class OMLXConfig:
                 "OMLX_PAGED_SSD_CACHE_MAX_SIZE", config.paged_ssd_cache.max_size
             )
 
-        # MCP settings
-        mcp_config = os.getenv("OMLX_MCP_CONFIG")
-        if mcp_config:
-            config.mcp.enabled = True
-            config.mcp.config_path = mcp_config
-
         # Feature flags
         config.continuous_batching = os.getenv(
             "OMLX_CONTINUOUS_BATCHING", "false"
@@ -304,10 +289,6 @@ class OMLXConfig:
         if hasattr(args, "paged_ssd_cache_max_size") and args.paged_ssd_cache_max_size:
             config.paged_ssd_cache.max_size = args.paged_ssd_cache_max_size
 
-        if hasattr(args, "mcp_config") and args.mcp_config:
-            config.mcp.enabled = True
-            config.mcp.config_path = args.mcp_config
-
         return config
 
     def to_dict(self) -> Dict[str, Any]:
@@ -324,7 +305,6 @@ class OMLXConfig:
                 **asdict(self.paged_ssd_cache),
                 "cache_dir": str(self.paged_ssd_cache.cache_dir) if self.paged_ssd_cache.cache_dir else None,
             },
-            "mcp": asdict(self.mcp),
             "continuous_batching": self.continuous_batching,
         }
 

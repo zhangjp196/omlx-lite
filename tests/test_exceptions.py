@@ -40,10 +40,6 @@ from omlx.exceptions import (
     InsufficientMemoryError,
     describe_ceiling_binding,
     ModelLoadingError,
-    # MCP exceptions
-    MCPError,
-    MCPConnectionError,
-    MCPToolExecutionError,
     # Helper function
     is_cache_corruption_error,
     CACHE_CORRUPTION_PATTERNS,
@@ -294,25 +290,6 @@ class TestEnginePoolExceptions:
         assert isinstance(error, EnginePoolError)
 
 
-class TestMCPExceptions:
-    """Test cases for MCP-related exceptions."""
-
-    def test_mcp_error_inheritance(self):
-        """Test MCPError inherits from OMLXError."""
-        error = MCPError("MCP error")
-        assert isinstance(error, OMLXError)
-
-    def test_mcp_connection_error(self):
-        """Test MCPConnectionError."""
-        error = MCPConnectionError("Failed to connect to MCP server")
-        assert isinstance(error, MCPError)
-
-    def test_mcp_tool_execution_error(self):
-        """Test MCPToolExecutionError."""
-        error = MCPToolExecutionError("Tool execution failed")
-        assert isinstance(error, MCPError)
-
-
 class TestIsCacheCorruptionError:
     """Test cases for is_cache_corruption_error helper function."""
 
@@ -447,9 +424,6 @@ class TestExceptionHierarchy:
             OMLXMemoryError("test"),
             OutOfMemoryError("test"),
             EnginePoolError("test"),
-            MCPError("test"),
-            MCPConnectionError("test"),
-            MCPToolExecutionError("test"),
         ]
 
         for exc in exceptions_to_test:

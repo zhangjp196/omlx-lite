@@ -1374,35 +1374,8 @@
                             </div>
                         </div>
 
-                        <!-- Intermediate tool-round turn: keeps per-round reasoning/content in the transcript -->
-                        <div x-show="msg.role === 'assistant' && msg._toolRound" class="assistant-message">
-                            <template x-if="hasVisibleThinking(msg._thinking)">
-                                <div class="thinking-container mt-2">
-                                    <div class="thinking-header" @click="msg._thinkingOpen = !msg._thinkingOpen">
-                                        <svg class="thinking-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                            stroke-width="2">
-                                            <circle cx="12" cy="12" r="10" />
-                                            <path d="M12 8v4M12 16h.01" />
-                                        </svg>
-                                        <span class="thinking-text">{{ t('chat.thinking_label') }}</span>
-                                        <svg class="thinking-toggle" :class="{ collapsed: !msg._thinkingOpen }"
-                                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <polyline points="18 15 12 9 6 15" />
-                                        </svg>
-                                    </div>
-                                    <div class="thinking-content markdown-content thinking-markdown"
-                                        :class="{ collapsed: !msg._thinkingOpen }" data-math-pending="true"
-                                        :data-math-version="msg._thinking ? String(msg._thinking.length) : '0'"
-                                        x-html="renderMarkdown(msg._thinking)"></div>
-                                </div>
-                            </template>
-                            <div x-show="msg.content" class="message-body markdown-content" data-math-pending="true"
-                                :data-math-version="typeof msg.content === 'string' ? String(msg.content.length) : '0'"
-                                x-html="renderMarkdown(msg.content)"></div>
-                        </div>
-
                         <!-- Assistant Message -->
-                        <div x-show="msg.role === 'assistant' && !msg._toolRound && msg._ui !== false" class="assistant-message">
+                        <div x-show="msg.role === 'assistant' && msg._ui !== false" class="assistant-message">
                             <div class="message-header">
                                 <div class="flex items-center gap-2 text-sm font-medium"
                                     style="color: var(--text-primary);">
@@ -2213,19 +2186,6 @@
                             </button>
                         </div>
                         <p class="svg-allow-warning" x-text="window.t('chat.scroll_behavior_hint')"></p>
-                        <div class="pt-3 border-t border-line space-y-1.5">
-                            <div class="flex items-center justify-between gap-3">
-                                <label class="text-xs font-medium" style="color: var(--text-primary);"
-                                    for="max-tool-rounds" x-text="window.t('chat.max_tool_rounds')"></label>
-                                <input id="max-tool-rounds" type="number" min="1" max="100" step="1"
-                                    x-model.number="chatSettings.maxToolRounds"
-                                    @change="chatSettings.maxToolRounds = normalizeMaxToolRounds(chatSettings.maxToolRounds); saveChatSettings()"
-                                    class="w-20 px-2 py-1.5 text-xs text-right border border-line rounded-lg focus:outline-none focus:border-line-strong bg-surface"
-                                    style="color: var(--text-primary);">
-                            </div>
-                            <p class="text-[10px]" style="color: var(--text-tertiary);"
-                                x-text="window.t('chat.max_tool_rounds_hint')"></p>
-                        </div>
                     </div>
                 </div>
 
@@ -2465,18 +2425,13 @@
                 const d = {
                     maxImages: 10,
                     maxImageSizeMb: 10,
-                    maxToolRounds: 10,
                     showScrollButton: true,
                 };
                 try {
                     const saved = JSON.parse(localStorage.getItem('omlx-chat-settings') || '{}');
-                    const parsedMaxToolRounds = Number.parseInt(saved.maxToolRounds, 10);
                     return {
                         ...d,
                         ...saved,
-                        maxToolRounds: Number.isFinite(parsedMaxToolRounds)
-                            ? Math.min(100, Math.max(1, parsedMaxToolRounds))
-                            : d.maxToolRounds,
                     };
                 } catch {
                     return d;
@@ -2557,12 +2512,6 @@
             editingPromptProfileName: false,
             newProfileNameDraft: '',
             profileDeleteConfirm: null,
-
-            // MODEL SETTINGS Section State (shared prompt profiles from PROFILE tab)
-            TOOL_TIMEOUT_MS: 30000,      // Per-tool execution timeout (ms)
-
-            // MCP tools & prefill polling
-            mcpTools: [],                // OpenAI-format tool definitions loaded from /v1/mcp/tools
 
             // Right Sidebar State
             rightSidebarOpen: window.innerWidth >= 1200,
@@ -3062,32 +3011,12 @@
             },
 
             isMessageVisible(msg, index) {
-                // Tool-round turns are _ui:false for the API/variant
-                // machinery but still render, following their segment's
-                // final assistant variant.
-                if (msg._toolRound) {
-                    return this.isToolFlowVisible(index);
-                }
                 if (msg._ui === false) return false;
                 if (msg.role !== 'assistant') return true;
                 const userIdx = this.findUserIndexForMessage(this.messages, index);
                 if (userIdx < 0) return true;
                 const active = this.getActiveVariantForUser(this.messages, userIdx);
                 return active ? msg.id === active.id : true;
-            },
-
-            // A tool-flow message is visible iff the visible assistant that
-            // closes its segment is the active variant. While the segment is
-            // still streaming (no closing assistant yet), always show it.
-            isToolFlowVisible(index) {
-                for (let i = index + 1; i < this.messages.length; i++) {
-                    const m = this.messages[i];
-                    if (m.role === 'user') break;
-                    if (m.role === 'assistant' && m._ui !== false) {
-                        return this.isMessageVisible(m, i);
-                    }
-                }
-                return true;
             },
 
             isActiveVariantForUser(userIndex, variantId) {
@@ -3480,10 +3409,6 @@
                     // One-off per-call overrides (e.g. "regenerate creative") without
                     // mutating the session's saved settings.
                     ...(context._generationOverride || {}),
-                    ...(() => {
-                        const tools = this.activeTools();
-                        return tools.length > 0 ? { tools } : {};
-                    })(),
                 };
             },
 
@@ -3516,7 +3441,6 @@
                     finalContent: false,
                     statusTimelineVisible: false,
                     _statusStart: 0,
-                    _toolTimers: {},
                     _prefillInterval: null,
                     targetMessageId: null,
                     _statsRequestId: null,
@@ -3787,7 +3711,6 @@
                 if (!preserveFinalContent) {
                     stream.finalContent = false;
                 }
-                stream._toolTimers = {};
                 stream.targetMessageId = null;
                 stream._statsRequestId = null;
                 stream._liveFooterStats = null;
@@ -3822,7 +3745,6 @@
                 await this.loadModelCapabilities(this.currentModel);
             }
             this.loadChatHistory();
-            this.fetchMcpTools();
         }
 
         this.applyTheme();
@@ -3954,31 +3876,6 @@
 
     hasPendingUploads() {
         return this.uploadImages.some(img => !img.base64);
-    },
-
-            // ===== MCP Tools =====
-
-            async fetchMcpTools() {
-        try {
-            const resp = await fetch('/v1/mcp/tools', {
-                headers: { 'Authorization': `Bearer ${this.getApiKey()}` }
-            });
-            if (!resp.ok) return;
-            const data = await resp.json();
-            this.mcpTools = (data.tools || []).map(t => ({
-                type: 'function',
-                function: {
-                    name: t.name,
-                    description: t.description || '',
-                    parameters: t.parameters || { type: 'object', properties: {} }
-                }
-            }));
-        } catch (e) { /* MCP not configured */ }
-    },
-
-    // Tools advertised on the next request.
-    activeTools() {
-        return this.mcpTools;
     },
 
     // ===== Engine Status =====
@@ -4370,41 +4267,7 @@
         return localStorage.getItem(API_KEY_STORAGE_KEY) || '';
     },
 
-    combineAbortSignals(signals) {
-        const valid = (signals || []).filter(Boolean);
-        if (!valid.length) return { signal: undefined, dispose() {} };
-        if (valid.length === 1) {
-            return { signal: valid[0], dispose() {} };
-        }
-        if (typeof AbortSignal.any === 'function') {
-            return { signal: AbortSignal.any(valid), dispose() {} };
-        }
-        const controller = new AbortController();
-        const listeners = [];
-        const dispose = () => {
-            for (const { signal, listener } of listeners) {
-                signal.removeEventListener('abort', listener);
-            }
-            listeners.length = 0;
-        };
-        const abort = () => {
-            dispose();
-            if (!controller.signal.aborted) {
-                controller.abort();
-            }
-        };
-        for (const signal of valid) {
-            if (signal.aborted) {
-                abort();
-                return { signal: controller.signal, dispose() {} };
-            }
-            signal.addEventListener('abort', abort);
-            listeners.push({ signal, listener: abort });
-        }
-        return { signal: controller.signal, dispose };
-    },
-
-            async loadModels() {
+    async loadModels() {
         try {
             this._adminModelsList = null;
             const apiHeaders = this.getApiKey()
@@ -5804,7 +5667,6 @@
         }
         
         const requestBody = this.buildChatCompletionBody(chatSession.messages, context, depth);
-        stream._toolRoundContent = '';
         this.setEngineStatus(context.chatId, { text: window.t('chat.status.starting') });
         this.startPrefillPolling(context.chatId);
 
@@ -5828,7 +5690,6 @@
             stream.responseReader = reader;
             const decoder = new TextDecoder();
             let buffer = '';
-            const toolCallsMap = {}; // accumulate streaming tool_call chunks by index
             let finishReason = null;
             let firstToken = false;  // flipped on first content/reasoning delta
             let lastUsage = null;    // filled by the stream_options usage chunk
@@ -5856,44 +5717,6 @@
                                 lastUsage = data.usage;
                                 stream._lastUsage = data.usage;
                                 continue;
-                            }
-
-                            // Accumulate streaming tool_call chunks
-                            if (delta?.tool_calls) {
-                                if (!firstToken) {
-                                    firstToken = true;
-                                    this.stopPrefillPolling(context.chatId);
-                                }
-                                for (const tc of delta.tool_calls) {
-                                    const i = tc.index ?? 0;
-                                    if (!toolCallsMap[i]) toolCallsMap[i] = { id: '', type: 'function', function: { name: '', arguments: '' } };
-                                    if (tc.id) toolCallsMap[i].id = tc.id;
-                                    if (tc.function?.name) toolCallsMap[i].function.name += tc.function.name;
-                                    if (tc.function?.arguments) toolCallsMap[i].function.arguments += tc.function.arguments;
-                                }
-                                // Move accumulated response text aside: the live box
-                                // switches to the tool status chip, but the text must
-                                // survive into the visible tool-round turn instead of
-                                // being discarded. Also reset thinking state so the
-                                // close tag isn't appended later.
-                                if (stream.streamingContent) {
-                                    stream._toolRoundContent = (stream._toolRoundContent || '') + stream.streamingContent;
-                                    stream.streamingContent = '';
-                                    stream.thinkingState.isInThinking = false;
-                                    stream.thinkingState.thinkingStartTime = null;
-                                }
-                                // Update live status
-                                const names = Object.values(toolCallsMap).map(t => t.function.name).filter(Boolean);
-                                if (names.length > 0) {
-                                    const unique = [...new Set(names)];
-                                    const liveLabel = unique.length > 3
-                                        ? window.t('chat.status.calling_tools_more')
-                                            .replace('{tools}', unique.slice(0, 2).join(', '))
-                                            .replace('{count}', unique.length - 2)
-                                        : window.t('chat.status.calling_tools')
-                                            .replace('{tools}', unique.join(', '));
-                                    stream.engineStatus = { text: liveLabel, icon: 'wrench' };
-                                }
                             }
 
                             if (delta?.reasoning_content) {
@@ -5981,155 +5804,6 @@
                 };
             }
 
-            const toolCalls = Object.values(toolCallsMap);
-            if (toolCalls.length > 0) {
-                const maxToolRounds = this.normalizeMaxToolRounds(this.chatSettings.maxToolRounds);
-                if (depth >= maxToolRounds) {
-                    const assistantId = stream.targetMessageId || this.newMessageId();
-                    const errorMsg = {
-                        id: assistantId,
-                        role: 'assistant',
-                        content: window.t('chat.error.max_tool_rounds')
-                            .replace('{max}', maxToolRounds),
-                        reasoning_content: this.hasVisibleThinking(stream.streamingThinking)
-                            ? stream.streamingThinking : null,
-                        model: requestModel,
-                        meta: this.captureGenerationContext(
-                            requestModel,
-                            context.systemPrompt,
-                            context._profile,
-                            context._generationOverride
-                        ),
-                        _perfVisible: false,
-                        _thinkingOpen: false,
-                    };
-                    this.attachThinkingToAssistantMessage(errorMsg, stream.streamingThinking);
-                    this.attachProfileToAssistantMessage(errorMsg, context._profile);
-                    chatSession.messages.push(errorMsg);
-                    this._setActiveVariant(chatSession, assistantId, context._variantUserIndex);
-                    this.saveCurrentChat(
-                        context.chatId,
-                        chatSession.messages,
-                        chatSession.model,
-                        context.systemPrompt
-                    );
-                    if (this.currentChatId === context.chatId) {
-                        this.scheduleEnhanceMessages();
-                    }
-                    return;
-                }
-
-                // Log the resolved tool set once — summarise when count is large
-                const names = toolCalls.map(t => t.function.name).filter(Boolean);
-                const uniqueNames = [...new Set(names)];
-                const label = toolCalls.length > 3
-                    ? window.t('chat.status.calling_tools_more')
-                        .replace('{tools}', uniqueNames.slice(0, 2).join(', '))
-                        .replace('{count}', toolCalls.length - 2)
-                    : window.t('chat.status.calling_tools').replace('{tools}', names.join(', '));
-                if (names.length) this.setEngineStatus(context.chatId, { text: label, icon: 'wrench' });
-
-                // Store the assistant tool_calls turn. `_ui: false` keeps it
-                // out of the variant/segment system (a visible assistant
-                // message would split the turn and drop this tool_calls turn
-                // from the API history); `_toolRound` makes the dedicated
-                // template block render it anyway so intermediate reasoning
-                // survives in the transcript.
-                const roundContent = ((stream._toolRoundContent || '') + (stream.streamingContent || '')) || null;
-                stream._toolRoundContent = '';
-                const toolTurn = {
-                    id: this.newMessageId(),
-                    role: 'assistant',
-                    content: roundContent,
-                    model: requestModel,
-                    tool_calls: toolCalls,
-                    _profile: context._profile,
-                    _toolRound: true,
-                    _thinkingOpen: false,
-                    _ui: false,
-                };
-                this.attachThinkingToAssistantMessage(toolTurn, stream.streamingThinking);
-                chatSession.messages.push(toolTurn);
-
-                // Record per-tool start times for elapsed tracking
-                toolCalls.forEach((tc) => { stream._toolTimers[tc.function.name] = Date.now(); });
-
-                // Execute all tools in parallel
-                const results = await Promise.all(toolCalls.map(async (tc, i) => {
-                    const toolName = tc.function.name;
-                    let args = {};
-                    try { args = JSON.parse(tc.function.arguments || '{}'); } catch (e) { }
-                    try {
-                        const timeoutSignal = AbortSignal.timeout?.(this.TOOL_TIMEOUT_MS);
-                        const { signal: combinedSignal, dispose: disposeCombinedSignal } = this.combineAbortSignals([
-                            stream.abortController?.signal,
-                            timeoutSignal,
-                        ]);
-                        let execResp;
-                        try {
-                            execResp = await fetch('/v1/mcp/execute', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.getApiKey()}` },
-                                body: JSON.stringify({ tool_name: toolName, arguments: args }),
-                                signal: combinedSignal,
-                            });
-                        } finally {
-                            disposeCombinedSignal();
-                        }
-                        const elapsed = ((Date.now() - (stream._toolTimers[toolName] || Date.now())) / 1000).toFixed(2);
-                        if (!execResp.ok) {
-                            return { content: `Error: HTTP ${execResp.status}`, error: true, toolName, elapsed };
-                        }
-                        const execData = await execResp.json();
-                        const content = typeof execData.content === 'string'
-                            ? execData.content
-                            : JSON.stringify(execData.content ?? execData);
-                        return { content, error: false, toolName, elapsed };
-                    } catch (e) {
-                        const elapsed = ((Date.now() - (stream._toolTimers[toolName] || Date.now())) / 1000).toFixed(2);
-                        const isTimeout = e.name === 'TimeoutError';
-                        const msg = isTimeout ? `Error: Tool timed out after ${this.TOOL_TIMEOUT_MS / 1000}s` : `Error: ${e.message}`;
-                        return { content: msg, error: true, toolName, elapsed };
-                    }
-                }));
-
-                // Log each tool outcome to the status timeline
-                results.forEach((result) => {
-                    if (result.error) {
-                        this.setEngineStatus(context.chatId, { text: `${result.toolName} failed`, icon: 'error' });
-                    } else {
-                        this.setEngineStatus(context.chatId, { text: `${result.toolName} done in ${result.elapsed}s`, icon: 'check' });
-                    }
-                });
-
-                // Push tool result messages. The raw JSON stays hidden from
-                // the transcript.
-                toolCalls.forEach((tc, i) => {
-                    chatSession.messages.push({
-                        id: this.newMessageId(),
-                        role: 'tool',
-                        tool_call_id: tc.id,
-                        content: results[i].content,
-                        _ui: false,
-                    });
-                });
-
-                this.saveCurrentChat(context.chatId, chatSession.messages, chatSession.model, context.systemPrompt);
-                if (stream.abortController?.signal.aborted) {
-                    return;
-                }
-
-                stream.streamingContent = '';
-                stream.streamingThinking = '';
-                stream.streamingThinkingOpen = false;
-                this.resetStreamRenderState(stream);
-
-                // Recurse — model synthesises final answer using tool results
-                await this.streamResponse(context, depth + 1);
-                return;
-            }
-            // --- end MCP tool call loop ---
-
             // Always push the completed assistant message — even if content is empty.
             // This prevents the streaming box from disappearing with no replacement
             // when the model emits only whitespace, only reasoning tokens, or nothing at all.
@@ -6168,14 +5842,13 @@
                     stream.thinkingState.isInThinking = false;
                     stream.thinkingState.thinkingStartTime = null;
                 }
-                // Stream was stopped by user — push whatever was accumulated,
-                // including response text set aside when tool calls began.
-                if (stream._toolRoundContent || stream.streamingContent || stream.streamingThinking) {
+                // Stream was stopped by user — push whatever was accumulated.
+                if (stream.streamingContent || stream.streamingThinking) {
                     const assistantId = stream.targetMessageId || this.newMessageId();
                     const assistantMsg = {
                         id: assistantId,
                         role: 'assistant',
-                        content: (stream._toolRoundContent || '') + (stream.streamingContent || ''),
+                        content: stream.streamingContent || '',
                         reasoning_content: this.hasVisibleThinking(stream.streamingThinking)
                             ? stream.streamingThinking : null,
                         model: requestModel,
@@ -7001,15 +6674,7 @@
         this.refreshCodeBlockButtons();
     },
 
-    normalizeMaxToolRounds(value) {
-        const parsed = Number.parseInt(value, 10);
-        return Number.isFinite(parsed) ? Math.min(100, Math.max(1, parsed)) : 10;
-    },
-
     saveChatSettings() {
-        this.chatSettings.maxToolRounds = this.normalizeMaxToolRounds(
-            this.chatSettings.maxToolRounds
-        );
         localStorage.setItem('omlx-chat-settings', JSON.stringify(this.chatSettings));
     },
 

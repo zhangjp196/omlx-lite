@@ -156,9 +156,10 @@ def _bare_grammar_processor(*, pending, allowed=None, vocab_size=64):
     """Build a GrammarConstraintProcessor via __new__, without xgrammar.
 
     ``__init__`` is the only part of the class that imports xgrammar, and CI
-    does not install it (``.github/workflows/ci.yml`` installs ``.[mcp]``
-    only), so the row-advance tests fill the instance state directly.
-    Mirrors the ``__class__.__new__`` idiom of ``_bare_generation_batch``.
+    does not install it (``.github/workflows/ci.yml`` installs the package
+    without the grammar extra), so the row-advance tests fill the instance
+    state directly. Mirrors the ``__class__.__new__`` idiom of
+    ``_bare_generation_batch``.
     """
     import numpy as np
 

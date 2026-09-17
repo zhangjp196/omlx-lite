@@ -68,8 +68,6 @@ brew update && brew upgrade omlx
 # 作为后台服务运行（崩溃时自动重启）
 brew services start omlx
 
-# 可选：MCP（Model Context Protocol）支持
-/opt/homebrew/opt/omlx/libexec/bin/pip install mcp
 ```
 
 可选的 GLM-5.2 / MiniMax M3 原生自定义内核目前需要 HEAD 构建：
@@ -84,7 +82,6 @@ brew install omlx --HEAD --with-custom-kernel
 git clone https://github.com/jundot/omlx.git
 cd omlx
 pip install -e .          # 仅核心
-pip install -e ".[mcp]"   # 含 MCP（Model Context Protocol）支持
 
 # 可选：GLM-5.2 / MiniMax M3 原生自定义内核
 OMLX_WITH_CUSTOM_KERNEL=1 pip install -e .
@@ -96,7 +93,7 @@ OMLX_WITH_CUSTOM_KERNEL=1 pip install -e .
 
 ### macOS 应用
 
-从 Applications 文件夹启动 oMLX。欢迎界面会引导你完成三个步骤 — 模型目录设置、服务器启动、首个模型下载。就是这样。要连接 OpenClaw、OpenCode、Codex、Hermes Agent 或 Copilot，请参阅[集成](#集成)。
+从 Applications 文件夹启动 oMLX。欢迎界面会引导你完成三个步骤 — 模型目录设置、服务器启动、首个模型下载。就是这样。
 
 <p align="center">
   <img src="docs/images/Screenshot 2026-02-10 at 00.36.32.png" alt="oMLX 欢迎界面" width="360">
@@ -159,10 +156,6 @@ brew services info omlx     # 查看状态
 
 通过 mlx-lm 的 BatchGenerator 处理并发请求。最大并发请求数可通过 CLI 或管理面板配置。
 
-### Claude Code 优化
-
-支持在 Claude Code 中使用较小上下文模型的上下文缩放。通过缩放上报的 Token 数量，让自动压缩在合适的时机触发，同时提供 SSE keep-alive 防止长时间预填充导致的读取超时。
-
 ### 多模型服务
 
 在同一服务器中加载 LLM、VLM、嵌入模型和重排序模型。通过自动和手动控制的组合管理模型：
@@ -193,21 +186,12 @@ brew services info omlx     # 查看状态
   <img src="docs/images/ScreenShot_2026-03-14_104350_610.png" alt="oMLX 聊天" width="720">
 </p>
 
-
 ### 模型下载器
 
 在管理后台中直接搜索和下载 HuggingFace 上的 MLX 模型。浏览模型卡片、查看文件大小，一键下载。
 
 <p align="center">
   <img src="docs/images/downloader_omlx.png" alt="oMLX 模型下载器" width="720">
-</p>
-
-### 集成
-
-在管理后台中一键设置 OpenClaw、OpenCode、Codex、Hermes Agent、Copilot 和 Pi。无需手动编辑配置文件。
-
-<p align="center">
-  <img src="docs/images/omlx_integrations.png" alt="oMLX 集成" width="720">
 </p>
 
 ### 性能基准测试
@@ -241,7 +225,7 @@ OpenAI 和 Anthropic API 的直接替代品。支持流式使用统计（`stream
 
 ### 工具调用与结构化输出
 
-支持 mlx-lm 中所有可用的函数调用格式、JSON Schema 验证和 MCP 工具集成。工具调用需要模型的聊天模板支持 `tools` 参数。以下模型系列通过 mlx-lm 的内置工具解析器自动检测：
+支持 mlx-lm 中所有可用的函数调用格式和 JSON Schema 验证。工具调用需要模型的聊天模板支持 `tools` 参数。以下模型系列通过 mlx-lm 的内置工具解析器自动检测：
 
 | 模型系列 | 格式 |
 |---|---|
@@ -296,9 +280,6 @@ omlx serve --model-dir ~/models --hot-cache-max-size 20%
 
 # 调整最大并发请求数（默认: 8）
 omlx serve --model-dir ~/models --max-concurrent-requests 16
-
-# 使用 MCP 工具
-omlx serve --model-dir ~/models --mcp-config mcp.json
 
 # HuggingFace 镜像端点（适用于受限地区）
 omlx serve --model-dir ~/models --hf-endpoint https://hf-mirror.com

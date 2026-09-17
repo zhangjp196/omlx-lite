@@ -58,9 +58,6 @@ def test_chat_sidebar_model_settings_use_i18n_keys():
         "chat.model_settings_advanced_hint",
         "chat.stats.token_generation",
         "chat.status.prefilling_percent",
-        "chat.max_tool_rounds",
-        "chat.max_tool_rounds_hint",
-        "chat.error.max_tool_rounds",
     ]
     for key in expected_keys:
         assert key in html

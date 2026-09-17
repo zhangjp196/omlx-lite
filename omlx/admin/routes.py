@@ -341,10 +341,6 @@ class GlobalSettingsRequest(BaseModel):
     hot_cache_max_size: str | None = None  # "0" = disabled, "8GB", etc.
     initial_cache_blocks: int | None = None  # Starting blocks (requires restart)
 
-    # MCP settings
-    mcp_config: str | None = None
-    mcp_expose_tools: bool | None = None
-
     # Usage history settings
     usage_history: bool | None = None
 
@@ -355,12 +351,6 @@ class GlobalSettingsRequest(BaseModel):
     # ModelScope settings
     ms_endpoint: str | None = None
 
-    # Network settings
-    network_http_proxy: str | None = None
-    network_https_proxy: str | None = None
-    network_no_proxy: str | None = None
-    network_ca_bundle: str | None = None
-
     # Sampling defaults
     sampling_max_context_window: int | None = None
     sampling_max_context_window_policy: int | None = Field(default=None, ge=1)
@@ -369,23 +359,6 @@ class GlobalSettingsRequest(BaseModel):
     sampling_top_p: float | None = None
     sampling_top_k: int | None = None
     sampling_repetition_penalty: float | None = None
-
-    # Claude Code settings
-    claude_code_mode: str | None = None
-    claude_code_opus_model: str | None = None
-    claude_code_sonnet_model: str | None = None
-    claude_code_haiku_model: str | None = None
-
-    # Other integrations settings
-    integrations_copilot_model: str | None = None
-    integrations_codex_model: str | None = None
-    integrations_opencode_model: str | None = None
-    integrations_openclaw_model: str | None = None
-    integrations_hermes_model: str | None = None
-    integrations_pi_model: str | None = None
-    integrations_openclaw_tools_profile: (
-        Literal["minimal", "coding", "messaging", "full"] | None
-    ) = None
 
     # UI settings
     ui_language: str | None = None
@@ -3579,7 +3552,7 @@ async def get_global_settings(is_admin: bool = Depends(require_admin)):
     Get current global server settings.
 
     Returns the full global settings including server, model, scheduler,
-    cache, and MCP configurations.
+    and cache configurations.
 
     Returns:
         JSON object with global settings.
@@ -3677,10 +3650,6 @@ async def get_global_settings(is_admin: bool = Depends(require_admin)):
             "hot_cache_max_size": global_settings.cache.hot_cache_max_size,
             "initial_cache_blocks": global_settings.cache.initial_cache_blocks,
         },
-        "mcp": {
-            "config_path": global_settings.mcp.config_path,
-            "expose_tools": global_settings.mcp.expose_tools,
-        },
         "usage": {
             "usage_history": global_settings.usage.usage_history,
         },
@@ -3691,12 +3660,6 @@ async def get_global_settings(is_admin: bool = Depends(require_admin)):
         },
         "modelscope": {
             "endpoint": global_settings.modelscope.endpoint,
-        },
-        "network": {
-            "http_proxy": global_settings.network.http_proxy,
-            "https_proxy": global_settings.network.https_proxy,
-            "no_proxy": global_settings.network.no_proxy,
-            "ca_bundle": global_settings.network.ca_bundle,
         },
         "sampling": {
             "max_context_window": global_settings.sampling.max_context_window,
@@ -3714,21 +3677,6 @@ async def get_global_settings(is_admin: bool = Depends(require_admin)):
             "api_key": global_settings.auth.api_key or "",
             "skip_api_key_verification": global_settings.auth.skip_api_key_verification,
             "sub_keys": [sk.to_dict() for sk in global_settings.auth.sub_keys],
-        },
-        "claude_code": {
-            "mode": global_settings.claude_code.mode,
-            "opus_model": global_settings.claude_code.opus_model,
-            "sonnet_model": global_settings.claude_code.sonnet_model,
-            "haiku_model": global_settings.claude_code.haiku_model,
-        },
-        "integrations": {
-            "codex_model": global_settings.integrations.codex_model,
-            "opencode_model": global_settings.integrations.opencode_model,
-            "openclaw_model": global_settings.integrations.openclaw_model,
-            "hermes_model": global_settings.integrations.hermes_model,
-            "pi_model": global_settings.integrations.pi_model,
-            "copilot_model": global_settings.integrations.copilot_model,
-            "openclaw_tools_profile": global_settings.integrations.openclaw_tools_profile,
         },
         "system": {
             "total_memory_bytes": memory_info["total_bytes"],
@@ -3763,9 +3711,9 @@ async def update_global_settings(
     """
     Update global server settings.
 
-    Updates are persisted to the global settings file. Some settings,
-    including the MCP exposure toggle, are applied immediately, while network
-    binding and MCP config path changes require a server restart.
+    Updates are persisted to the global settings file. Some settings are
+    applied immediately, while network binding changes require a server
+    restart.
 
     Args:
         request: GlobalSettingsRequest with the new settings.
@@ -4302,16 +4250,6 @@ async def update_global_settings(
         else:
             logger.warning(f"Failed to apply cache settings runtime: {msg}")
 
-    # MCP config path changes require restart; exposure changes are live.
-    if request.mcp_config is not None:
-        global_settings.mcp.config_path = (
-            request.mcp_config if request.mcp_config else None
-        )
-    # MCP expose toggle is applied at runtime (no restart needed)
-    if request.mcp_expose_tools is not None:
-        global_settings.mcp.expose_tools = request.mcp_expose_tools
-        runtime_applied.append("mcp_expose_tools")
-
     # Usage history recording is applied at runtime (no restart needed).
     # Disabling flushes pending aggregates and leaves usage.sqlite3 in place.
     if request.usage_history is not None:
@@ -4362,52 +4300,6 @@ async def update_global_settings(
             f"ModelScope endpoint updated to: " f"{request.ms_endpoint or '(default)'}"
         )
 
-    # Apply network settings (Live - immediately applied via env vars)
-    network_changed = False
-    if request.network_http_proxy is not None:
-        global_settings.network.http_proxy = request.network_http_proxy
-        if request.network_http_proxy:
-            os.environ["HTTP_PROXY"] = request.network_http_proxy
-            os.environ["http_proxy"] = request.network_http_proxy
-        else:
-            os.environ.pop("HTTP_PROXY", None)
-            os.environ.pop("http_proxy", None)
-        network_changed = True
-
-    if request.network_https_proxy is not None:
-        global_settings.network.https_proxy = request.network_https_proxy
-        if request.network_https_proxy:
-            os.environ["HTTPS_PROXY"] = request.network_https_proxy
-            os.environ["https_proxy"] = request.network_https_proxy
-        else:
-            os.environ.pop("HTTPS_PROXY", None)
-            os.environ.pop("https_proxy", None)
-        network_changed = True
-
-    if request.network_no_proxy is not None:
-        global_settings.network.no_proxy = request.network_no_proxy
-        if request.network_no_proxy:
-            os.environ["NO_PROXY"] = request.network_no_proxy
-            os.environ["no_proxy"] = request.network_no_proxy
-        else:
-            os.environ.pop("NO_PROXY", None)
-            os.environ.pop("no_proxy", None)
-        network_changed = True
-
-    if request.network_ca_bundle is not None:
-        global_settings.network.ca_bundle = request.network_ca_bundle
-        if request.network_ca_bundle:
-            os.environ["REQUESTS_CA_BUNDLE"] = request.network_ca_bundle
-            os.environ["SSL_CERT_FILE"] = request.network_ca_bundle
-        else:
-            os.environ.pop("REQUESTS_CA_BUNDLE", None)
-            os.environ.pop("SSL_CERT_FILE", None)
-        network_changed = True
-
-    if network_changed:
-        runtime_applied.append("network")
-        logger.info("Network settings updated")
-
     # Apply sampling settings (Live - immediately applied)
     sampling_changed = False
     if request.sampling_max_context_window is not None:
@@ -4452,78 +4344,6 @@ async def update_global_settings(
         if success:
             runtime_applied.append("sampling")
             logger.info(msg)
-
-    # Apply Claude Code settings (Live - immediately applied)
-    claude_code_changed = False
-    # mode: standard is-not-None check is correct — mode must never be null
-    if request.claude_code_mode is not None:
-        global_settings.claude_code.mode = request.claude_code_mode
-        claude_code_changed = True
-    # model fields: use model_fields_set to distinguish "field absent from POST body"
-    # from "field explicitly sent as null" — null must clear the field to None.
-    # DO NOT use `is not None` here: that would prevent clearing a model field to null.
-    if "claude_code_opus_model" in request.model_fields_set:
-        global_settings.claude_code.opus_model = request.claude_code_opus_model
-        claude_code_changed = True
-    if "claude_code_sonnet_model" in request.model_fields_set:
-        global_settings.claude_code.sonnet_model = request.claude_code_sonnet_model
-        claude_code_changed = True
-    if "claude_code_haiku_model" in request.model_fields_set:
-        global_settings.claude_code.haiku_model = request.claude_code_haiku_model
-        claude_code_changed = True
-
-    if claude_code_changed:
-        runtime_applied.append("claude_code")
-        logger.info(
-            f"Claude Code settings updated: "
-            f"mode={global_settings.claude_code.mode}, "
-            f"opus={global_settings.claude_code.opus_model}, "
-            f"sonnet={global_settings.claude_code.sonnet_model}, "
-            f"haiku={global_settings.claude_code.haiku_model}"
-        )
-
-    # Apply integrations settings (Live - immediately applied)
-    integrations_changed = False
-    if "integrations_copilot_model" in request.model_fields_set:
-        global_settings.integrations.copilot_model = request.integrations_copilot_model
-        integrations_changed = True
-    if "integrations_codex_model" in request.model_fields_set:
-        global_settings.integrations.codex_model = request.integrations_codex_model
-        integrations_changed = True
-    if "integrations_opencode_model" in request.model_fields_set:
-        global_settings.integrations.opencode_model = (
-            request.integrations_opencode_model
-        )
-        integrations_changed = True
-    if "integrations_openclaw_model" in request.model_fields_set:
-        global_settings.integrations.openclaw_model = (
-            request.integrations_openclaw_model
-        )
-        integrations_changed = True
-    if "integrations_hermes_model" in request.model_fields_set:
-        global_settings.integrations.hermes_model = request.integrations_hermes_model
-        integrations_changed = True
-    if "integrations_pi_model" in request.model_fields_set:
-        global_settings.integrations.pi_model = request.integrations_pi_model
-        integrations_changed = True
-    if "integrations_openclaw_tools_profile" in request.model_fields_set:
-        global_settings.integrations.openclaw_tools_profile = (
-            request.integrations_openclaw_tools_profile
-        )
-        integrations_changed = True
-
-    if integrations_changed:
-        runtime_applied.append("integrations")
-        logger.info(
-            f"Integration settings updated: "
-            f"copilot={global_settings.integrations.copilot_model}, "
-            f"codex={global_settings.integrations.codex_model}, "
-            f"opencode={global_settings.integrations.opencode_model}, "
-            f"openclaw={global_settings.integrations.openclaw_model}, "
-            f"hermes={global_settings.integrations.hermes_model}, "
-            f"pi={global_settings.integrations.pi_model}, "
-            f"openclaw_tools_profile={global_settings.integrations.openclaw_tools_profile}"
-        )
 
     # Apply UI settings
     if request.ui_language is not None:

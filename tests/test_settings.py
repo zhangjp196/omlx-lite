@@ -16,15 +16,11 @@ from omlx.settings import (
     DEFAULT_BURST_DECODE_MODE,
     AuthSettings,
     CacheSettings,
-    ClaudeCodeSettings,
     GlobalSettings,
     HuggingFaceSettings,
-    IntegrationSettings,
     LoggingSettings,
-    MCPSettings,
     MemorySettings,
     ModelSettings,
-    NetworkSettings,
     SamplingSettings,
     SchedulerSettings,
     ServerSettings,
@@ -699,78 +695,8 @@ class TestAuthSettings:
         assert settings.sub_keys == []
 
 
-class TestMCPSettings:
-    """Tests for MCPSettings dataclass."""
-
-    def test_defaults(self):
-        """Test default values."""
-        settings = MCPSettings()
-        assert settings.config_path is None
-        assert settings.expose_tools is True
-
-    def test_custom_values(self):
-        """Test custom values."""
-        settings = MCPSettings(config_path="/path/to/mcp.json", expose_tools=False)
-        assert settings.config_path == "/path/to/mcp.json"
-        assert settings.expose_tools is False
-
-    def test_to_dict(self):
-        """Test conversion to dictionary."""
-        settings = MCPSettings(config_path="/mcp/config.json")
-        result = settings.to_dict()
-        assert result == {"config_path": "/mcp/config.json", "expose_tools": True}
-
-    def test_to_dict_expose_tools_false(self):
-        """expose_tools=False survives the to_dict round trip."""
-        settings = MCPSettings(config_path="/mcp/config.json", expose_tools=False)
-        result = settings.to_dict()
-        assert result == {"config_path": "/mcp/config.json", "expose_tools": False}
-
-    def test_from_dict(self):
-        """Test creation from dictionary."""
-        data = {"config_path": "/some/path.json"}
-        settings = MCPSettings.from_dict(data)
-        assert settings.config_path == "/some/path.json"
-        assert settings.expose_tools is True
-
-    def test_from_dict_expose_tools_false(self):
-        """Test explicit expose_tools=False from dictionary."""
-        data = {"config_path": "/some/path.json", "expose_tools": False}
-        settings = MCPSettings.from_dict(data)
-        assert settings.config_path == "/some/path.json"
-        assert settings.expose_tools is False
-
-    def test_from_dict_missing_expose_tools_defaults_true(self):
-        """Legacy configs without expose_tools keep exposing tools."""
-        data = {"config_path": "/legacy/path.json"}
-        settings = MCPSettings.from_dict(data)
-        assert settings.expose_tools is True
-
-    def test_global_settings_save_load_round_trip_preserves_expose_tools(
-        self, tmp_path
-    ):
-        """save()/load() keep the MCP expose toggle across restarts."""
-        gs = GlobalSettings(base_path=tmp_path)
-        gs.mcp.config_path = "/mcp.json"
-        gs.mcp.expose_tools = False
-        gs.save()
-
-        restored = GlobalSettings.load(base_path=tmp_path)
-        assert restored.mcp.config_path == "/mcp.json"
-        assert restored.mcp.expose_tools is False
-
-    def test_global_settings_save_load_defaults_expose_tools_true(self, tmp_path):
-        """Legacy settings files without expose_tools default to True."""
-        gs = GlobalSettings(base_path=tmp_path)
-        gs.save()
-
-        settings_file = tmp_path / "settings.json"
-        data = json.loads(settings_file.read_text())
-        del data["mcp"]["expose_tools"]
-        settings_file.write_text(json.dumps(data))
-
-        restored = GlobalSettings.load(base_path=tmp_path)
-        assert restored.mcp.expose_tools is True
+class TestGlobalSettingsPersistence:
+    """Tests for GlobalSettings persistence."""
 
     def test_global_settings_save_is_atomic(self, tmp_path):
         """save() must never leave a temp file or a torn settings.json."""
@@ -898,61 +824,6 @@ class TestHuggingFaceSettings:
         settings = HuggingFaceSettings.from_dict({})
         assert settings.endpoint == ""
         assert settings.hf_cache_enabled is True
-
-
-class TestNetworkSettings:
-    """Tests for NetworkSettings dataclass."""
-
-    def test_defaults(self):
-        """Test default values."""
-        settings = NetworkSettings()
-        assert settings.http_proxy == ""
-        assert settings.https_proxy == ""
-        assert settings.no_proxy == ""
-        assert settings.ca_bundle == ""
-
-    def test_custom_values(self):
-        """Test custom values."""
-        settings = NetworkSettings(
-            http_proxy="http://proxy:8080",
-            https_proxy="http://proxy:8080",
-            no_proxy="localhost,127.0.0.1",
-            ca_bundle="/tmp/corp-ca.pem",
-        )
-        assert settings.http_proxy == "http://proxy:8080"
-        assert settings.https_proxy == "http://proxy:8080"
-        assert settings.no_proxy == "localhost,127.0.0.1"
-        assert settings.ca_bundle == "/tmp/corp-ca.pem"
-
-    def test_to_dict(self):
-        """Test conversion to dictionary."""
-        settings = NetworkSettings(
-            http_proxy="http://proxy:8080",
-            https_proxy="http://proxy:8080",
-            no_proxy="localhost",
-            ca_bundle="/tmp/ca.pem",
-        )
-        result = settings.to_dict()
-        assert result == {
-            "http_proxy": "http://proxy:8080",
-            "https_proxy": "http://proxy:8080",
-            "no_proxy": "localhost",
-            "ca_bundle": "/tmp/ca.pem",
-        }
-
-    def test_from_dict(self):
-        """Test creation from dictionary."""
-        data = {
-            "http_proxy": "http://proxy:8080",
-            "https_proxy": "http://proxy:8080",
-            "no_proxy": "localhost",
-            "ca_bundle": "/tmp/ca.pem",
-        }
-        settings = NetworkSettings.from_dict(data)
-        assert settings.http_proxy == "http://proxy:8080"
-        assert settings.https_proxy == "http://proxy:8080"
-        assert settings.no_proxy == "localhost"
-        assert settings.ca_bundle == "/tmp/ca.pem"
 
 
 class TestLoggingSettings:
@@ -1086,7 +957,6 @@ class TestGlobalSettings:
             assert settings.scheduler.embedding_batch_size == 32
             assert settings.cache.enabled is True
             assert settings.auth.api_key is None
-            assert settings.mcp.config_path is None
 
     @pytest.mark.parametrize(
         "host",
@@ -1274,7 +1144,6 @@ class TestGlobalSettings:
                             "ssd_cache_max_size": "50GB",
                         },
                         "auth": {"api_key": "secret"},
-                        "mcp": {"config_path": "/mcp.json"},
                     }
                 )
             )
@@ -1291,7 +1160,6 @@ class TestGlobalSettings:
             assert settings.cache.enabled is False
             assert settings.cache.ssd_cache_dir == "/cache"
             assert settings.auth.api_key == "secret"
-            assert settings.mcp.config_path == "/mcp.json"
 
     def test_load_and_save_migrates_v060_gdn_sidecar_precision(
         self, tmp_path, monkeypatch
@@ -1907,15 +1775,6 @@ class TestGlobalSettings:
                 settings = GlobalSettings.load(base_path=tmpdir)
                 assert settings.auth.api_key == "env-key"
 
-    def test_env_override_mcp(self):
-        """Test environment variable override for MCP settings."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.dict(
-                os.environ, {"OMLX_MCP_CONFIG": "/env/mcp.json"}, clear=False
-            ):
-                settings = GlobalSettings.load(base_path=tmpdir)
-                assert settings.mcp.config_path == "/env/mcp.json"
-
     def test_env_override_hf_endpoint(self):
         """Test environment variable override for HuggingFace settings."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1926,25 +1785,6 @@ class TestGlobalSettings:
             ):
                 settings = GlobalSettings.load(base_path=tmpdir)
                 assert settings.huggingface.endpoint == "https://hf-mirror.com"
-
-    def test_env_override_network(self):
-        """Test environment variable override for network proxy settings."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.dict(
-                os.environ,
-                {
-                    "OMLX_HTTP_PROXY": "http://proxy.company.com:8080",
-                    "OMLX_HTTPS_PROXY": "http://proxy.company.com:8443",
-                    "OMLX_NO_PROXY": "localhost,127.0.0.1",
-                    "OMLX_CA_BUNDLE": "/tmp/corp-ca.pem",
-                },
-                clear=False,
-            ):
-                settings = GlobalSettings.load(base_path=tmpdir)
-                assert settings.network.http_proxy == "http://proxy.company.com:8080"
-                assert settings.network.https_proxy == "http://proxy.company.com:8443"
-                assert settings.network.no_proxy == "localhost,127.0.0.1"
-                assert settings.network.ca_bundle == "/tmp/corp-ca.pem"
 
     def test_env_override_invalid_port_logs_warning(self):
         """Test invalid OMLX_PORT logs warning and keeps default."""
@@ -2077,51 +1917,6 @@ class TestGlobalSettings:
             settings = GlobalSettings.load(base_path=tmpdir, cli_args=args)
             assert settings.cache.initial_cache_blocks == 4096
 
-    def test_cli_override_mcp(self):
-        """Test CLI override for MCP settings."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            args = Namespace(mcp_config="/cli/mcp.json")
-            settings = GlobalSettings.load(base_path=tmpdir, cli_args=args)
-            assert settings.mcp.config_path == "/cli/mcp.json"
-
-    def test_cli_override_network(self):
-        """Test CLI override for network proxy settings."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            args = Namespace(
-                http_proxy="http://proxy.company.com:8080",
-                https_proxy="http://proxy.company.com:8443",
-                no_proxy="localhost,127.0.0.1",
-                ca_bundle="/tmp/corp-ca.pem",
-            )
-            settings = GlobalSettings.load(base_path=tmpdir, cli_args=args)
-            assert settings.network.http_proxy == "http://proxy.company.com:8080"
-            assert settings.network.https_proxy == "http://proxy.company.com:8443"
-            assert settings.network.no_proxy == "localhost,127.0.0.1"
-            assert settings.network.ca_bundle == "/tmp/corp-ca.pem"
-
-    def test_validate_invalid_http_proxy(self):
-        """Test invalid http_proxy fails validation."""
-        settings = GlobalSettings()
-        settings.network.http_proxy = "proxy.company.com:8080"
-        errors = settings.validate()
-        assert any("http_proxy" in e.lower() for e in errors)
-
-    def test_validate_invalid_https_proxy(self):
-        """Test invalid https_proxy fails validation."""
-        settings = GlobalSettings()
-        settings.network.https_proxy = "proxy.company.com:8443"
-        errors = settings.validate()
-        assert any("https_proxy" in e.lower() for e in errors)
-
-    def test_validate_valid_network_proxy(self):
-        """Test valid network proxy values pass validation."""
-        settings = GlobalSettings()
-        settings.network.http_proxy = "http://proxy.company.com:8080"
-        settings.network.https_proxy = "http://proxy.company.com:8443"
-        errors = settings.validate()
-        assert not any("http_proxy" in e.lower() for e in errors)
-        assert not any("https_proxy" in e.lower() for e in errors)
-
     def test_priority_cli_over_env_over_file(self):
         """Test that CLI > env > file > defaults priority is respected."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -2158,7 +1953,6 @@ class TestGlobalSettings:
             assert "scheduler" in result
             assert "cache" in result
             assert "auth" in result
-            assert "mcp" in result
 
     def test_to_scheduler_config(self):
         """Test conversion to SchedulerConfig."""
@@ -2528,280 +2322,6 @@ class TestSamplingSettings:
         with_policy = SamplingSettings.from_dict({"max_context_window_policy": 128_000})
         assert with_policy.max_context_window_policy == 128_000
         assert with_policy.to_dict()["max_context_window_policy"] == 128_000
-
-
-class TestClaudeCodeSettings:
-    """Tests for ClaudeCodeSettings dataclass."""
-
-    def test_defaults(self):
-        """Test default values."""
-        settings = ClaudeCodeSettings()
-        assert settings.mode == "cloud"
-
-    def test_to_dict(self):
-        """Test conversion to dictionary."""
-        settings = ClaudeCodeSettings(mode="cloud")
-        result = settings.to_dict()
-        assert result["mode"] == "cloud"
-        assert result["opus_model"] is None
-        assert result["sonnet_model"] is None
-        assert result["haiku_model"] is None
-
-    def test_from_dict_ignores_legacy_scaling_keys(self):
-        """Old settings.json with context_scaling_enabled/target_context_size
-        (or the later autocompact_threshold_pct) must load without error;
-        the removed keys are silently dropped — no cache-credit-adjacent
-        setting replaces them, since auto-compact is now driven entirely by
-        CLAUDE_CODE_MAX_CONTEXT_TOKENS / CLAUDE_CODE_AUTO_COMPACT_WINDOW
-        (see fix-claude-code-autocompact-threshold's follow-up design)."""
-        data = {
-            "context_scaling_enabled": True,
-            "target_context_size": 1000000,
-            "autocompact_threshold_pct": 90,
-            "mode": "local",
-        }
-        settings = ClaudeCodeSettings.from_dict(data)
-        assert settings.mode == "local"
-        assert not hasattr(settings, "context_scaling_enabled")
-        assert not hasattr(settings, "target_context_size")
-        assert not hasattr(settings, "autocompact_threshold_pct")
-
-    def test_new_fields_defaults(self):
-        """Test that the four new fields have correct defaults."""
-        settings = ClaudeCodeSettings()
-        assert settings.mode == "cloud"
-        assert settings.opus_model is None
-        assert settings.sonnet_model is None
-        assert settings.haiku_model is None
-
-    def test_new_fields_to_dict(self):
-        """Test that to_dict includes all four new fields."""
-        settings = ClaudeCodeSettings(
-            mode="local",
-            opus_model="mlx-community/Qwen3-30B-A3B-4bit",
-            sonnet_model="mlx-community/Qwen3-14B-4bit",
-            haiku_model="mlx-community/Qwen3-4B-4bit",
-        )
-        result = settings.to_dict()
-        assert result["mode"] == "local"
-        assert result["opus_model"] == "mlx-community/Qwen3-30B-A3B-4bit"
-        assert result["sonnet_model"] == "mlx-community/Qwen3-14B-4bit"
-        assert result["haiku_model"] == "mlx-community/Qwen3-4B-4bit"
-
-    def test_new_fields_from_dict_full(self):
-        """Test from_dict with all four new fields present."""
-        data = {
-            "mode": "local",
-            "opus_model": "mlx-community/Qwen3-30B-A3B-4bit",
-            "sonnet_model": "mlx-community/Qwen3-14B-4bit",
-            "haiku_model": "mlx-community/Qwen3-4B-4bit",
-        }
-        settings = ClaudeCodeSettings.from_dict(data)
-        assert settings.mode == "local"
-        assert settings.opus_model == "mlx-community/Qwen3-30B-A3B-4bit"
-        assert settings.sonnet_model == "mlx-community/Qwen3-14B-4bit"
-        assert settings.haiku_model == "mlx-community/Qwen3-4B-4bit"
-
-    def test_new_fields_from_dict_backward_compat(self):
-        """Test from_dict({}) gives correct defaults — simulates old settings.json."""
-        settings = ClaudeCodeSettings.from_dict({})
-        assert settings.mode == "cloud"
-        assert settings.opus_model is None
-        assert settings.sonnet_model is None
-        assert settings.haiku_model is None
-
-    def test_new_fields_from_dict_null_model(self):
-        """Test from_dict with explicit null model values."""
-        data = {"mode": "cloud", "opus_model": None}
-        settings = ClaudeCodeSettings.from_dict(data)
-        assert settings.mode == "cloud"
-        assert settings.opus_model is None
-
-
-class TestIntegrationSettings:
-    """Tests for IntegrationSettings dataclass.
-
-    Upstream ``tests/test_integrations.py::TestIntegrationSettings`` already
-    covers defaults, basic to_dict, and full/empty from_dict. The local
-    tests below add: exact dict-shape pinning (so a future field
-    addition that forgets to_dict raises a loud test failure — see
-    81dc2d5 for the MemorySettings case), partial-dict fallback,
-    explicit-null override semantics, and round-trip identity.
-    """
-
-    def test_to_dict_defaults(self):
-        settings = IntegrationSettings()
-        d = settings.to_dict()
-        # Pin only the integration-model surface, so a future field
-        # addition is not silently required here.
-        assert d["codex_model"] is None
-        assert d["opencode_model"] is None
-        assert d["openclaw_model"] is None
-        assert d["hermes_model"] is None
-        assert d["pi_model"] is None
-        assert d["copilot_model"] is None
-        assert d["openclaw_tools_profile"] == "coding"
-
-    def test_to_dict_custom(self):
-        settings = IntegrationSettings(
-            codex_model="qwen-coder-30b",
-            opencode_model="qwen-coder-7b",
-            openclaw_model="qwen-coder-3b",
-            hermes_model="hermes-3-8b",
-            pi_model="qwen-3-4b",
-            copilot_model="qwen-coder-1.5b",
-            openclaw_tools_profile="creative",
-        )
-        d = settings.to_dict()
-        assert d["codex_model"] == "qwen-coder-30b"
-        assert d["opencode_model"] == "qwen-coder-7b"
-        assert d["openclaw_model"] == "qwen-coder-3b"
-        assert d["hermes_model"] == "hermes-3-8b"
-        assert d["pi_model"] == "qwen-3-4b"
-        assert d["copilot_model"] == "qwen-coder-1.5b"
-        assert d["openclaw_tools_profile"] == "creative"
-
-    def test_from_dict_partial(self):
-        """Missing keys fall back to dataclass defaults."""
-        settings = IntegrationSettings.from_dict({"pi_model": "qwen-3-4b"})
-        assert settings.pi_model == "qwen-3-4b"
-        assert settings.codex_model is None
-        assert settings.copilot_model is None
-        assert settings.openclaw_tools_profile == "coding"
-
-    def test_from_dict_explicit_null_overrides_default(self):
-        """Explicit None for a *_model field must be preserved."""
-        settings = IntegrationSettings.from_dict({"codex_model": None, "pi_model": "x"})
-        assert settings.codex_model is None
-        assert settings.pi_model == "x"
-
-    def test_round_trip(self):
-        """to_dict → from_dict → to_dict is identity."""
-        original = IntegrationSettings(
-            codex_model="m1",
-            pi_model="m2",
-            openclaw_tools_profile="custom",
-        )
-        round_tripped = IntegrationSettings.from_dict(original.to_dict())
-        assert round_tripped.to_dict() == original.to_dict()
-
-
-class TestClaudeCodeValidation:
-    """Tests for mode validation in GlobalSettings.validate()."""
-
-    def _make_global_settings(self, mode: str) -> GlobalSettings:
-        """Create a GlobalSettings with a specific claude_code.mode for testing."""
-        gs = GlobalSettings.__new__(GlobalSettings)
-        # Copy defaults from a real instance then override claude_code
-        real = GlobalSettings()
-        gs.__dict__.update(real.__dict__)
-        gs.claude_code = ClaudeCodeSettings(mode=mode)
-        return gs
-
-    def test_validate_mode_cloud_valid(self):
-        """Mode 'cloud' passes validation."""
-        gs = self._make_global_settings("cloud")
-        errors = gs.validate()
-        mode_errors = [e for e in errors if "claude_code mode" in e]
-        assert mode_errors == []
-
-    def test_validate_mode_local_valid(self):
-        """Mode 'local' passes validation."""
-        gs = self._make_global_settings("local")
-        errors = gs.validate()
-        mode_errors = [e for e in errors if "claude_code mode" in e]
-        assert mode_errors == []
-
-    def test_validate_mode_invalid(self):
-        """Invalid mode produces a validation error."""
-        gs = self._make_global_settings("auto")
-        errors = gs.validate()
-        mode_errors = [e for e in errors if "claude_code mode" in e]
-        assert len(mode_errors) == 1
-        assert "auto" in mode_errors[0]
-
-    def test_validate_mode_empty_string_invalid(self):
-        """Empty string mode is invalid."""
-        gs = self._make_global_settings("")
-        errors = gs.validate()
-        mode_errors = [e for e in errors if "claude_code mode" in e]
-        assert len(mode_errors) == 1
-
-
-class TestClaudeCodeRouteIntegration:
-    """Integration tests for the settings chain: dataclass <-> dict <-> routes."""
-
-    def test_claude_code_to_dict_has_four_keys(self):
-        """to_dict must include all four keys so GlobalSettings.save() persists them."""
-        s = ClaudeCodeSettings(
-            mode="local",
-            opus_model="mlx-community/Qwen3-30B-A3B-4bit",
-            sonnet_model="mlx-community/Qwen3-14B-4bit",
-            haiku_model="mlx-community/Qwen3-4B-4bit",
-        )
-        d = s.to_dict()
-        expected_keys = {
-            "mode",
-            "opus_model",
-            "sonnet_model",
-            "haiku_model",
-        }
-        assert set(d.keys()) == expected_keys
-
-    def test_claude_code_new_fields_round_trip(self):
-        """Full round-trip: set values -> to_dict -> from_dict -> values match."""
-        original = ClaudeCodeSettings(
-            mode="local",
-            opus_model="mlx-community/Qwen3-30B-A3B-4bit",
-            sonnet_model="mlx-community/Qwen3-14B-4bit",
-            haiku_model="mlx-community/Qwen3-4B-4bit",
-        )
-        reloaded = ClaudeCodeSettings.from_dict(original.to_dict())
-        assert reloaded.mode == "local"
-        assert reloaded.opus_model == "mlx-community/Qwen3-30B-A3B-4bit"
-        assert reloaded.sonnet_model == "mlx-community/Qwen3-14B-4bit"
-        assert reloaded.haiku_model == "mlx-community/Qwen3-4B-4bit"
-
-    def test_claude_code_round_trip_null_models(self):
-        """Null model fields survive the round-trip."""
-        original = ClaudeCodeSettings(mode="cloud", opus_model=None)
-        reloaded = ClaudeCodeSettings.from_dict(original.to_dict())
-        assert reloaded.mode == "cloud"
-        assert reloaded.opus_model is None
-
-    def test_post_handler_model_fields_set_explicit_null(self):
-        """
-        GlobalSettingsRequest.model_validate with explicit null must include
-        the field in model_fields_set so the POST handler can clear it.
-        """
-        from omlx.admin.routes import GlobalSettingsRequest
-
-        r = GlobalSettingsRequest.model_validate({"claude_code_opus_model": None})
-        assert "claude_code_opus_model" in r.model_fields_set
-        assert r.claude_code_opus_model is None
-
-    def test_post_handler_model_fields_set_absent_field(self):
-        """
-        GlobalSettingsRequest() with no claude_code_opus_model must NOT include it
-        in model_fields_set — POST handler must not apply it (leave server value alone).
-        """
-        from omlx.admin.routes import GlobalSettingsRequest
-
-        r = GlobalSettingsRequest()
-        assert "claude_code_opus_model" not in r.model_fields_set
-
-    def test_post_handler_model_fields_set_explicit_value(self):
-        """
-        GlobalSettingsRequest with an explicit model ID must include the field
-        in model_fields_set and carry the value.
-        """
-        from omlx.admin.routes import GlobalSettingsRequest
-
-        r = GlobalSettingsRequest(
-            claude_code_opus_model="mlx-community/Qwen3-30B-A3B-4bit"
-        )
-        assert "claude_code_opus_model" in r.model_fields_set
-        assert r.claude_code_opus_model == "mlx-community/Qwen3-30B-A3B-4bit"
 
 
 class TestCORSMiddleware:

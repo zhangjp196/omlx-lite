@@ -64,14 +64,9 @@ def _has_cli_overrides(args) -> bool:
         "hot_cache_max_size",
         "hot_cache_write_through",
         "initial_cache_blocks",
-        "mcp_config",
         "hf_endpoint",
         "hf_cache_enabled",
         "ms_endpoint",
-        "http_proxy",
-        "https_proxy",
-        "no_proxy",
-        "ca_bundle",
     )
     if any(getattr(args, field, None) is not None for field in persisted_fields):
         return True
@@ -162,20 +157,6 @@ def serve_command(args):
     if settings.modelscope.endpoint:
         os.environ["MODELSCOPE_DOMAIN"] = settings.modelscope.endpoint
 
-    # Apply proxy/TLS settings if configured
-    if settings.network.http_proxy:
-        os.environ["HTTP_PROXY"] = settings.network.http_proxy
-        os.environ["http_proxy"] = settings.network.http_proxy
-    if settings.network.https_proxy:
-        os.environ["HTTPS_PROXY"] = settings.network.https_proxy
-        os.environ["https_proxy"] = settings.network.https_proxy
-    if settings.network.no_proxy:
-        os.environ["NO_PROXY"] = settings.network.no_proxy
-        os.environ["no_proxy"] = settings.network.no_proxy
-    if settings.network.ca_bundle:
-        os.environ["REQUESTS_CA_BUNDLE"] = settings.network.ca_bundle
-        os.environ["SSL_CERT_FILE"] = settings.network.ca_bundle
-
     # Seed Burst Decode env vars so EngineConfig picks up the saved mode at
     # engine construction (no restart needed when the mode changes later).
     for _key, _value in burst_decode_env(settings.server.burst_decode_mode).items():
@@ -260,13 +241,6 @@ def serve_command(args):
             print(f"Memory guard: on (tier: {settings.memory.memory_guard_tier})")
         else:
             print("Memory guard: off")
-
-        # Store MCP config path for FastAPI startup
-        # Priority: CLI arg > settings.json
-        mcp_config = args.mcp_config or settings.mcp.config_path
-        if mcp_config:
-            print(f"MCP config: {mcp_config}")
-            os.environ["OMLX_MCP_CONFIG"] = mcp_config
 
         # Determine paged SSD cache directory
         # Priority: --no-cache > CLI arg > settings file
@@ -371,206 +345,6 @@ def serve_command(args):
         # after bind succeeds but before the server takes ownership.
         for sock in serve_sockets:
             sock.close()
-
-
-def launch_command(args, extra_args: list[str] | None = None):
-    """Launch an external tool integrated with oMLX.
-
-    extra_args are unknown CLI tokens forwarded to the underlying tool binary
-    (e.g. ``-r`` / ``--resume <id>`` for Claude Code).
-    """
-    import requests
-
-    from .integrations import IntegrationContext, get_integration, list_integrations
-    from .settings import GlobalSettings
-
-    def _optional_str(value) -> str | None:
-        return value if isinstance(value, str) and value else None
-
-    tool_name = args.tool
-
-    if tool_name == "list":
-        print("Available integrations:")
-        for integ in list_integrations():
-            installed = "installed" if integ.is_installed() else "not installed"
-            print(f"  {integ.name:12s} {integ.display_name} ({installed})")
-        return
-
-    integration = get_integration(tool_name)
-    if integration is None:
-        print(f"Unknown integration: {tool_name}")
-        print("Available: " + ", ".join(i.name for i in list_integrations()))
-        sys.exit(1)
-
-    # Resolve host/port: CLI args > env vars > settings.json > defaults
-    settings = GlobalSettings.load()
-    host = args.host or settings.server.host
-    port = args.port or settings.server.port
-
-    # host may be a comma-separated list of bind addresses; pick the first one
-    # for connecting. Wildcard addresses (0.0.0.0, ::) are valid bind targets
-    # but not connectable — fall back to localhost in that case.
-    first_bind = [h.strip() for h in host.split(",") if h.strip()][0] if host else ""
-    connect_host = (
-        first_bind if first_bind not in ("", "0.0.0.0", "::") else "127.0.0.1"
-    )
-
-    # Check if oMLX server is running
-    base_url = f"http://{connect_host}:{port}"
-    try:
-        resp = requests.get(f"{base_url}/health", timeout=3)
-        resp.raise_for_status()
-    except Exception:
-        print(f"oMLX server is not running at {base_url}")
-        print("Start the server first: omlx start")
-        sys.exit(1)
-
-    # Get API key: CLI args > settings.json > empty
-    api_key = getattr(args, "api_key", None) or settings.auth.api_key or ""
-
-    claude_settings = getattr(settings, "claude_code", None)
-    cli_opus_model = _optional_str(getattr(args, "opus_model", None))
-    cli_sonnet_model = _optional_str(getattr(args, "sonnet_model", None))
-    cli_haiku_model = _optional_str(getattr(args, "haiku_model", None))
-    settings_opus_model = _optional_str(getattr(claude_settings, "opus_model", None))
-    settings_sonnet_model = _optional_str(
-        getattr(claude_settings, "sonnet_model", None)
-    )
-    settings_haiku_model = _optional_str(getattr(claude_settings, "haiku_model", None))
-    opus_model = cli_opus_model or settings_opus_model
-    sonnet_model = cli_sonnet_model or settings_sonnet_model
-    haiku_model = cli_haiku_model or settings_haiku_model
-
-    # Build headers for authenticated requests
-    headers = {}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-
-    # Pre-fetch model status (context_window, max_tokens, model_type per model)
-    models_status_map: dict[str, dict] = {}
-    try:
-        resp = requests.get(f"{base_url}/v1/models/status", headers=headers, timeout=5)
-        if resp.ok:
-            for m in resp.json().get("models", []):
-                if m_id := m.get("id"):
-                    models_status_map[m_id] = m
-                if model_alias := m.get("model_alias"):
-                    models_status_map[model_alias] = m
-    except Exception:
-        pass
-
-    # Determine model. Explicit CLI tier flags bypass the picker; otherwise always
-    # prompt interactively so the user's selection is honoured.
-    model = args.model
-    if not model and (cli_opus_model or cli_sonnet_model or cli_haiku_model):
-        model = cli_sonnet_model or cli_opus_model or cli_haiku_model or ""
-    elif not model:
-        # Fetch available models from server
-        try:
-            resp = requests.get(f"{base_url}/v1/models", headers=headers, timeout=5)
-            resp.raise_for_status()
-            data = resp.json()
-            models = [
-                m["id"]
-                for m in data.get("data", [])
-                if m.get("model_type") in ("llm", "vlm", None)
-            ]
-        except Exception:
-            models = []
-
-        if not models:
-            print("No models available. Load a model first.")
-            sys.exit(1)
-
-        if len(models) == 1:
-            model = models[0]
-            print(f"Using model: {model}")
-        else:
-            models_info_list = [
-                {"id": m_id, **models_status_map.get(m_id, {})} for m_id in models
-            ]
-            model = integration.select_model(models_info_list, integration.display_name)
-
-    # Check if tool is installed
-    if not integration.is_installed():
-        print(f"{integration.display_name} is not installed.")
-        print(f"Install: {integration.install_hint}")
-        sys.exit(1)
-
-    # Tier precedence: explicit tier flag > saved claude_code tier setting >
-    # the model picked (or auto-selected) above. The picker only chooses the
-    # default model; tiers configured on the Claude Code settings page keep
-    # their role, otherwise the three persisted selections would be silently
-    # replaced by one model on every interactive launch (#3543). Roles without
-    # a saved model fall back to the picked model in the integration.
-
-    # Enforce Claude Code's model requirements after all interactive,
-    # automatic, and explicit model paths have resolved. The picker also marks
-    # disabled models, but this central check prevents --model and tier flags
-    # from bypassing the same restriction.
-    if tool_name == "claude":
-        from .integrations.claude import claude_code_model_disabled_reason
-
-        models_to_validate = [
-            ("", model),
-            ("Opus tier ", opus_model),
-            ("Sonnet tier ", sonnet_model),
-            ("Haiku tier ", haiku_model),
-        ]
-        validated_models: set[str] = set()
-        for role, model_id in models_to_validate:
-            if not model_id or model_id in validated_models:
-                continue
-            validated_models.add(model_id)
-            disabled_reason = claude_code_model_disabled_reason(
-                {"id": model_id, **models_status_map.get(model_id, {})}
-            )
-            if disabled_reason:
-                print(
-                    f"Cannot launch {integration.display_name} with "
-                    f"{role}model '{model_id}'."
-                )
-                print(disabled_reason)
-                print(
-                    "Choose a model with at least 48K context or increase its "
-                    "configured max_context_window."
-                )
-                sys.exit(1)
-
-    # Resolve model limits from pre-fetched status
-    model_info = models_status_map.get(model, {})
-    context_window = model_info.get("max_context_window")
-    if tool_name == "claude":
-        # Claude's context overrides are process-wide, including tier switches
-        # and subagents. Do not advertise more than any configured model allows.
-        context_windows = [
-            info["max_context_window"]
-            for model_id in (model, opus_model, sonnet_model, haiku_model)
-            if (info := models_status_map.get(model_id, {}))
-            and isinstance(info.get("max_context_window"), int)
-            and info["max_context_window"] > 0
-        ]
-        context_window = min(context_windows) if context_windows else None
-    ctx = IntegrationContext(
-        host=connect_host,
-        port=port,
-        api_key=api_key,
-        model=model,
-        opus_model=opus_model if tool_name == "claude" else None,
-        sonnet_model=sonnet_model if tool_name == "claude" else None,
-        haiku_model=haiku_model if tool_name == "claude" else None,
-        context_window=context_window,
-        max_tokens=model_info.get("max_tokens"),
-        model_type=model_info.get("model_type"),
-        reasoning=model_info.get("enable_thinking"),
-        tools_profile=getattr(args, "tools_profile", "coding"),
-        extra_args=tuple(extra_args or ()),
-        cross_session=getattr(args, "cross_session", False),
-    )
-
-    # Launch
-    print(f"Launching {integration.display_name} with model {model}...")
-    integration.launch(ctx)
 
 
 def _app_control_socket_path():
@@ -994,7 +768,6 @@ def main():
         epilog="""
 Examples:
   omlx serve mlx-community/Llama-3.2-3B-Instruct-4bit --port 8000
-  omlx launch codex --model qwen3.5
         """,
     )
     parser.add_argument(
@@ -1158,14 +931,6 @@ Example directory structure:
         "Higher values reduce dynamic allocation overhead for large contexts.",
     )
 
-    # MCP options
-    serve_parser.add_argument(
-        "--mcp-config",
-        type=str,
-        default=None,
-        help="Path to MCP configuration file (JSON/YAML) for tool integration",
-    )
-
     # HuggingFace options
     serve_parser.add_argument(
         "--hf-endpoint",
@@ -1189,32 +954,6 @@ Example directory structure:
         help="Custom ModelScope Hub endpoint URL",
     )
 
-    # Network options
-    serve_parser.add_argument(
-        "--http-proxy",
-        type=str,
-        default=None,
-        help="HTTP proxy URL (e.g., http://proxy.company.com:8080)",
-    )
-    serve_parser.add_argument(
-        "--https-proxy",
-        type=str,
-        default=None,
-        help="HTTPS proxy URL (e.g., http://proxy.company.com:8080)",
-    )
-    serve_parser.add_argument(
-        "--no-proxy",
-        type=str,
-        default=None,
-        help="Comma-separated hosts/IPs to bypass proxy (e.g., localhost,127.0.0.1)",
-    )
-    serve_parser.add_argument(
-        "--ca-bundle",
-        type=str,
-        default=None,
-        help="Path to CA bundle PEM file for TLS interception environments",
-    )
-
     # Base path and auth
     serve_parser.add_argument(
         "--base-path",
@@ -1227,88 +966,6 @@ Example directory structure:
         type=str,
         default=None,
         help="API key for authentication (required for non-loopback binds)",
-    )
-
-    # Launch command
-    launch_parser = subparsers.add_parser(
-        "launch",
-        help="Launch an external tool with oMLX integration",
-        description=(
-            "Configure and launch external coding tools (Claude Code, Copilot, "
-            "Codex, Codex App, OpenCode, OpenClaw, Hermes Agent, Pi) to use "
-            "the running oMLX server."
-        ),
-    )
-    launch_parser.add_argument(
-        "tool",
-        type=str,
-        help=(
-            "Tool to launch: claude, copilot, codex, codex_app, opencode, "
-            "openclaw, hermes, pi, or 'list' to show available"
-        ),
-    )
-    launch_parser.add_argument(
-        "--model",
-        type=str,
-        default=None,
-        help="Model to use (interactive selection if not specified)",
-    )
-    launch_parser.add_argument(
-        "--host",
-        type=str,
-        default=None,
-        help="oMLX server host (default: from settings or 127.0.0.1)",
-    )
-    launch_parser.add_argument(
-        "--port",
-        type=int,
-        default=None,
-        help="oMLX server port (default: from settings or 8000)",
-    )
-    launch_parser.add_argument(
-        "--api-key",
-        type=str,
-        default=None,
-        help="API key for oMLX server authentication",
-    )
-    launch_parser.add_argument(
-        "--tools-profile",
-        type=str,
-        default="coding",
-        choices=["minimal", "coding", "messaging", "full"],
-        help="OpenClaw tools profile (default: coding)",
-    )
-    launch_parser.add_argument(
-        "--opus",
-        dest="opus_model",
-        type=str,
-        default=None,
-        help="Claude Code Opus tier model (Claude integration only)",
-    )
-    launch_parser.add_argument(
-        "--sonnet",
-        dest="sonnet_model",
-        type=str,
-        default=None,
-        help="Claude Code Sonnet tier model (Claude integration only)",
-    )
-    launch_parser.add_argument(
-        "--haiku",
-        dest="haiku_model",
-        type=str,
-        default=None,
-        help="Claude Code Haiku tier model (Claude integration only)",
-    )
-    launch_parser.add_argument(
-        "--cross-session",
-        action="store_true",
-        default=False,
-        help=(
-            "Allow the launched session to be reachable via Claude Code's "
-            "cross-session messaging (ListAgents/SendMessage). This requires "
-            "enabling telemetry and feature-flag traffic to Anthropic that is "
-            "otherwise kept disabled by default (Claude integration only)."
-        ),
     )
 
     # Diagnose command
@@ -1452,41 +1109,29 @@ Example directory structure:
         help="Emit machine-readable JSON",
     )
 
-    # Split launch's forwarding separator before argparse. parse_known_args()
-    # inconsistently retains it when known options precede it, and stripping it
-    # afterward cannot distinguish it from a separator intended for the tool.
-    argv = sys.argv[1:]
-    if argv[:1] == ["launch"] and "--" in argv[2:]:
-        separator_index = argv.index("--", 2)
-        args, extra_args = parser.parse_known_args(argv[:separator_index])
-        extra_args.extend(argv[separator_index + 1 :])
-    else:
-        args, extra_args = parser.parse_known_args(argv)
+    args, extra_args = parser.parse_known_args(sys.argv[1:])
 
-    if args.command == "launch":
-        launch_command(args, extra_args=extra_args)
+    if extra_args:
+        parser.error(f"unrecognized arguments: {' '.join(extra_args)}")
+    if args.command == "serve":
+        if (
+            getattr(args, "memory_guard", None) == "off"
+            and getattr(args, "memory_guard_gb", None) is not None
+        ):
+            parser.error(
+                "--memory-guard off cannot be combined with "
+                "--memory-guard-gb (a custom ceiling needs the guard on)"
+            )
+        serve_command(args)
+    elif args.command in {"start", "stop", "restart"}:
+        sys.exit(lifecycle_command(args))
+    elif args.command == "diagnose":
+        sys.exit(diagnose_command(args))
+    elif args.command == "cluster":
+        sys.exit(cluster_command(args))
     else:
-        if extra_args:
-            parser.error(f"unrecognized arguments: {' '.join(extra_args)}")
-        if args.command == "serve":
-            if (
-                getattr(args, "memory_guard", None) == "off"
-                and getattr(args, "memory_guard_gb", None) is not None
-            ):
-                parser.error(
-                    "--memory-guard off cannot be combined with "
-                    "--memory-guard-gb (a custom ceiling needs the guard on)"
-                )
-            serve_command(args)
-        elif args.command in {"start", "stop", "restart"}:
-            sys.exit(lifecycle_command(args))
-        elif args.command == "diagnose":
-            sys.exit(diagnose_command(args))
-        elif args.command == "cluster":
-            sys.exit(cluster_command(args))
-        else:
-            parser.print_help()
-            sys.exit(1)
+        parser.print_help()
+        sys.exit(1)
 
 
 if __name__ == "__main__":

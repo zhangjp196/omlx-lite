@@ -1290,18 +1290,6 @@ class TestRuntimeCacheObservability:
 class TestGlobalSettingsValidation:
     """Tests for stricter GlobalSettingsRequest validation."""
 
-    def test_integrations_openclaw_tools_profile_rejects_invalid_value(self):
-        with pytest.raises(ValidationError):
-            admin_routes.GlobalSettingsRequest(
-                integrations_openclaw_tools_profile="invalid-profile"
-            )
-
-    def test_integrations_openclaw_tools_profile_accepts_valid_values(self):
-        req = admin_routes.GlobalSettingsRequest(
-            integrations_openclaw_tools_profile="coding"
-        )
-        assert req.integrations_openclaw_tools_profile == "coding"
-
     def test_idle_timeout_rejects_negative(self):
         with pytest.raises(ValidationError):
             admin_routes.GlobalSettingsRequest(idle_timeout_seconds=-1)

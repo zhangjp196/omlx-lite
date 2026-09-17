@@ -571,29 +571,6 @@ class ModelBusyError(EnginePoolError):
 
 
 # =============================================================================
-# MCP Errors
-# =============================================================================
-
-
-class MCPError(OMLXError):
-    """Base exception for MCP-related errors."""
-
-    pass
-
-
-class MCPConnectionError(MCPError):
-    """Failed to connect to MCP server."""
-
-    pass
-
-
-class MCPToolExecutionError(MCPError):
-    """Failed to execute MCP tool."""
-
-    pass
-
-
-# =============================================================================
 # Helper Functions
 # =============================================================================
 

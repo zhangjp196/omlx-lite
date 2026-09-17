@@ -69,8 +69,6 @@ brew update && brew upgrade omlx
 # Lancer en service en arrière-plan (redémarre automatiquement en cas de crash)
 brew services start omlx
 
-# Optionnel : support MCP (Model Context Protocol)
-/opt/homebrew/opt/omlx/libexec/bin/pip install mcp
 ```
 
 Les kernels natifs personnalisés optionnels pour GLM-5.2 / MiniMax M3 nécessitent actuellement un build HEAD :
@@ -85,7 +83,6 @@ brew install omlx --HEAD --with-custom-kernel
 git clone https://github.com/jundot/omlx.git
 cd omlx
 pip install -e .          # Core uniquement
-pip install -e ".[mcp]"   # Avec support MCP (Model Context Protocol)
 
 # Optionnel : kernels natifs personnalisés GLM-5.2 / MiniMax M3
 OMLX_WITH_CUSTOM_KERNEL=1 pip install -e .
@@ -97,7 +94,7 @@ Nécessite macOS 15.0+ (Sequoia), Python 3.10+, et Apple Silicon (M1/M2/M3/M4/M5
 
 ### Application macOS
 
-Lancez oMLX depuis votre dossier Applications. L'écran de bienvenue vous guide en trois étapes — répertoire des modèles, démarrage du serveur, et premier téléchargement de modèle. C'est tout. Pour connecter OpenClaw, OpenCode, Codex ou Hermes Agent, voir [Intégrations](#intégrations).
+Lancez oMLX depuis votre dossier Applications. L'écran de bienvenue vous guide en trois étapes — répertoire des modèles, démarrage du serveur, et premier téléchargement de modèle. C'est tout.
 
 <p align="center">
   <img src="docs/images/Screenshot 2026-02-10 at 00.36.32.png" alt="oMLX Welcome Screen" width="360">
@@ -160,10 +157,6 @@ Gestion de cache KV par blocs inspirée de vLLM, avec partage de préfixe et Cop
 
 Gère les requêtes concurrentes via le BatchGenerator de mlx-lm. Le nombre maximum de requêtes simultanées est configurable via CLI ou le panneau d'administration.
 
-### Optimisation Claude Code
-
-Support du context scaling pour faire tourner des modèles avec un contexte réduit avec Claude Code. Ajuste les compteurs de tokens reportés pour que l'auto-compactage se déclenche au bon moment, et un keep-alive SSE évite les timeouts de lecture pendant les longs prefills.
-
 ### Service multi-modèles
 
 Chargez des LLM, VLM, modèles d'embedding et rerankers sur le même serveur. Les modèles sont gérés via une combinaison de contrôles automatiques et manuels :
@@ -202,14 +195,6 @@ Recherchez et téléchargez des modèles MLX depuis HuggingFace directement dans
   <img src="docs/images/downloader_omlx.png" alt="oMLX Model Downloader" width="720">
 </p>
 
-### Intégrations
-
-Configurez OpenClaw, OpenCode, Codex, Hermes Agent et Pi directement depuis le tableau de bord en un clic. Aucune édition manuelle de config requise.
-
-<p align="center">
-  <img src="docs/images/omlx_integrations.png" alt="oMLX Integrations" width="720">
-</p>
-
 ### Benchmark de performance
 
 Benchmarking en un clic depuis le panneau d'admin. Mesure le prefill (PP) et la génération de tokens (TG) en tokens par seconde, avec des tests de hit partiel sur le cache de préfixe pour des chiffres réalistes.
@@ -241,7 +226,7 @@ Remplacement direct des APIs OpenAI et Anthropic. Supporte les statistiques d'us
 
 ### Appel d'outils et sorties structurées
 
-Supporte tous les formats d'appel de fonctions disponibles dans mlx-lm, la validation de schéma JSON, et l'intégration d'outils MCP. L'appel d'outils nécessite que le template de chat du modèle supporte le paramètre `tools`. Les familles de modèles suivantes sont auto-détectées via les parseurs intégrés de mlx-lm :
+Supporte tous les formats d'appel de fonctions disponibles dans mlx-lm et la validation de schéma JSON. L'appel d'outils nécessite que le template de chat du modèle supporte le paramètre `tools`. Les familles de modèles suivantes sont auto-détectées via les parseurs intégrés de mlx-lm :
 
 | Famille de modèles | Format |
 |---|---|
@@ -296,9 +281,6 @@ omlx serve --model-dir ~/models --hot-cache-max-size 20%
 
 # Ajuster le nombre max de requêtes simultanées (par défaut : 8)
 omlx serve --model-dir ~/models --max-concurrent-requests 16
-
-# Avec les outils MCP
-omlx serve --model-dir ~/models --mcp-config mcp.json
 
 # Endpoint miroir HuggingFace (pour les régions restreintes)
 omlx serve --model-dir ~/models --hf-endpoint https://hf-mirror.com

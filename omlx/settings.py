@@ -625,26 +625,6 @@ class AuthSettings:
 
 
 @dataclass
-class MCPSettings:
-    """MCP (Model Context Protocol) configuration settings."""
-
-    config_path: str | None = None
-    expose_tools: bool = True
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {"config_path": self.config_path, "expose_tools": self.expose_tools}
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> MCPSettings:
-        """Create from dictionary."""
-        return cls(
-            config_path=data.get("config_path"),
-            expose_tools=data.get("expose_tools", True),
-        )
-
-
-@dataclass
 class HuggingFaceSettings:
     """HuggingFace Hub configuration settings."""
 
@@ -681,35 +661,6 @@ class ModelScopeSettings:
     def from_dict(cls, data: dict[str, Any]) -> ModelScopeSettings:
         """Create from dictionary."""
         return cls(endpoint=data.get("endpoint", ""))
-
-
-@dataclass
-class NetworkSettings:
-    """Network proxy and TLS trust settings."""
-
-    http_proxy: str = ""
-    https_proxy: str = ""
-    no_proxy: str = ""
-    ca_bundle: str = ""
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "http_proxy": self.http_proxy,
-            "https_proxy": self.https_proxy,
-            "no_proxy": self.no_proxy,
-            "ca_bundle": self.ca_bundle,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> NetworkSettings:
-        """Create from dictionary."""
-        return cls(
-            http_proxy=data.get("http_proxy", ""),
-            https_proxy=data.get("https_proxy", ""),
-            no_proxy=data.get("no_proxy", ""),
-            ca_bundle=data.get("ca_bundle", ""),
-        )
 
 
 @dataclass
@@ -832,75 +783,6 @@ class UsageSettings:
 
 
 @dataclass
-class ClaudeCodeSettings:
-    """Claude Code integration settings."""
-
-    # Mode: "cloud" = native claude.ai subscription, "local" = route through omlx.
-    # Default is "cloud" so upgrades don't silently route traffic to omlx.
-    mode: str = "cloud"
-    opus_model: str | None = None
-    sonnet_model: str | None = None
-    haiku_model: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "mode": self.mode,
-            "opus_model": self.opus_model,
-            "sonnet_model": self.sonnet_model,
-            "haiku_model": self.haiku_model,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ClaudeCodeSettings:
-        """Create from dictionary."""
-        return cls(
-            mode=data.get("mode", "cloud"),
-            opus_model=data.get("opus_model"),
-            sonnet_model=data.get("sonnet_model"),
-            haiku_model=data.get("haiku_model"),
-        )
-
-
-@dataclass
-class IntegrationSettings:
-    """Other integrations settings."""
-
-    codex_model: str | None = None
-    opencode_model: str | None = None
-    openclaw_model: str | None = None
-    hermes_model: str | None = None
-    pi_model: str | None = None
-    copilot_model: str | None = None
-    openclaw_tools_profile: str = "coding"
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "codex_model": self.codex_model,
-            "opencode_model": self.opencode_model,
-            "openclaw_model": self.openclaw_model,
-            "hermes_model": self.hermes_model,
-            "pi_model": self.pi_model,
-            "copilot_model": self.copilot_model,
-            "openclaw_tools_profile": self.openclaw_tools_profile,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> IntegrationSettings:
-        """Create from dictionary."""
-        return cls(
-            codex_model=data.get("codex_model"),
-            opencode_model=data.get("opencode_model"),
-            openclaw_model=data.get("openclaw_model"),
-            hermes_model=data.get("hermes_model"),
-            pi_model=data.get("pi_model"),
-            copilot_model=data.get("copilot_model"),
-            openclaw_tools_profile=data.get("openclaw_tools_profile", "coding"),
-        )
-
-
-@dataclass
 class GlobalSettings:
     """
     Global settings for oMLX.
@@ -919,14 +801,10 @@ class GlobalSettings:
     scheduler: SchedulerSettings = field(default_factory=SchedulerSettings)
     cache: CacheSettings = field(default_factory=CacheSettings)
     auth: AuthSettings = field(default_factory=AuthSettings)
-    mcp: MCPSettings = field(default_factory=MCPSettings)
     huggingface: HuggingFaceSettings = field(default_factory=HuggingFaceSettings)
     modelscope: ModelScopeSettings = field(default_factory=ModelScopeSettings)
-    network: NetworkSettings = field(default_factory=NetworkSettings)
     sampling: SamplingSettings = field(default_factory=SamplingSettings)
     logging: LoggingSettings = field(default_factory=LoggingSettings)
-    claude_code: ClaudeCodeSettings = field(default_factory=ClaudeCodeSettings)
-    integrations: IntegrationSettings = field(default_factory=IntegrationSettings)
     ui: UISettings = field(default_factory=UISettings)
     usage: UsageSettings = field(default_factory=UsageSettings)
     idle_timeout: ModelIdleTimeoutSettings = field(
@@ -1007,22 +885,14 @@ class GlobalSettings:
                 self.cache = CacheSettings.from_dict(data["cache"])
             if "auth" in data:
                 self.auth = AuthSettings.from_dict(data["auth"])
-            if "mcp" in data:
-                self.mcp = MCPSettings.from_dict(data["mcp"])
             if "huggingface" in data:
                 self.huggingface = HuggingFaceSettings.from_dict(data["huggingface"])
             if "modelscope" in data:
                 self.modelscope = ModelScopeSettings.from_dict(data["modelscope"])
-            if "network" in data:
-                self.network = NetworkSettings.from_dict(data["network"])
             if "sampling" in data:
                 self.sampling = SamplingSettings.from_dict(data["sampling"])
             if "logging" in data:
                 self.logging = LoggingSettings.from_dict(data["logging"])
-            if "claude_code" in data:
-                self.claude_code = ClaudeCodeSettings.from_dict(data["claude_code"])
-            if "integrations" in data:
-                self.integrations = IntegrationSettings.from_dict(data["integrations"])
             if "ui" in data:
                 self.ui = UISettings.from_dict(data["ui"])
             if "usage" in data:
@@ -1139,10 +1009,6 @@ class GlobalSettings:
         if api_key := os.getenv("OMLX_API_KEY"):
             self.auth.api_key = api_key
 
-        # MCP settings
-        if mcp_config := os.getenv("OMLX_MCP_CONFIG"):
-            self.mcp.config_path = mcp_config
-
         # HuggingFace settings
         if hf_endpoint := os.getenv("OMLX_HF_ENDPOINT"):
             self.huggingface.endpoint = hf_endpoint
@@ -1157,16 +1023,6 @@ class GlobalSettings:
         # ModelScope settings
         if ms_endpoint := os.getenv("OMLX_MS_ENDPOINT"):
             self.modelscope.endpoint = ms_endpoint
-
-        # Network settings
-        if http_proxy := os.getenv("OMLX_HTTP_PROXY"):
-            self.network.http_proxy = http_proxy
-        if https_proxy := os.getenv("OMLX_HTTPS_PROXY"):
-            self.network.https_proxy = https_proxy
-        if no_proxy := os.getenv("OMLX_NO_PROXY"):
-            self.network.no_proxy = no_proxy
-        if ca_bundle := os.getenv("OMLX_CA_BUNDLE"):
-            self.network.ca_bundle = ca_bundle
 
         # Logging settings
         if log_dir := os.getenv("OMLX_LOG_DIR"):
@@ -1277,10 +1133,6 @@ class GlobalSettings:
         if include_api_key and hasattr(args, "api_key") and args.api_key is not None:
             self.auth.api_key = args.api_key
 
-        # MCP settings
-        if hasattr(args, "mcp_config") and args.mcp_config is not None:
-            self.mcp.config_path = args.mcp_config
-
         # HuggingFace settings
         if hasattr(args, "hf_endpoint") and args.hf_endpoint is not None:
             self.huggingface.endpoint = args.hf_endpoint
@@ -1290,16 +1142,6 @@ class GlobalSettings:
         # ModelScope settings
         if hasattr(args, "ms_endpoint") and args.ms_endpoint is not None:
             self.modelscope.endpoint = args.ms_endpoint
-
-        # Network settings
-        if hasattr(args, "http_proxy") and args.http_proxy is not None:
-            self.network.http_proxy = args.http_proxy
-        if hasattr(args, "https_proxy") and args.https_proxy is not None:
-            self.network.https_proxy = args.https_proxy
-        if hasattr(args, "no_proxy") and args.no_proxy is not None:
-            self.network.no_proxy = args.no_proxy
-        if hasattr(args, "ca_bundle") and args.ca_bundle is not None:
-            self.network.ca_bundle = args.ca_bundle
 
     def get_hf_cache_dir(self) -> Path:
         """Return the standard HuggingFace Hub cache directory."""
@@ -1353,14 +1195,10 @@ class GlobalSettings:
             "scheduler": self.scheduler.to_dict(),
             "cache": self.cache.to_dict(),
             "auth": self.auth.to_dict(),
-            "mcp": self.mcp.to_dict(),
             "huggingface": self.huggingface.to_dict(),
             "modelscope": self.modelscope.to_dict(),
-            "network": self.network.to_dict(),
             "sampling": self.sampling.to_dict(),
             "logging": self.logging.to_dict(),
-            "claude_code": self.claude_code.to_dict(),
-            "integrations": self.integrations.to_dict(),
             "ui": self.ui.to_dict(),
             "usage": self.usage.to_dict(),
             "idle_timeout": self.idle_timeout.to_dict(),
@@ -1637,14 +1475,6 @@ class GlobalSettings:
                 f"Invalid sampling top_k: {self.sampling.top_k} (must be >= 0)"
             )
 
-        # Claude Code validation
-        valid_modes = {"local", "cloud"}
-        if self.claude_code.mode not in valid_modes:
-            errors.append(
-                f"Invalid claude_code mode: '{self.claude_code.mode}' "
-                f"(must be one of {sorted(valid_modes)})"
-            )
-
         # HuggingFace validation
         if self.huggingface.endpoint:
             endpoint = self.huggingface.endpoint.strip()
@@ -1660,22 +1490,6 @@ class GlobalSettings:
             if endpoint and not endpoint.startswith(("http://", "https://")):
                 errors.append(
                     f"Invalid modelscope endpoint: '{endpoint}' "
-                    "(must start with http:// or https://)"
-                )
-
-        # Network proxy validation
-        if self.network.http_proxy:
-            proxy = self.network.http_proxy.strip()
-            if proxy and not proxy.startswith(("http://", "https://")):
-                errors.append(
-                    f"Invalid http_proxy: '{proxy}' "
-                    "(must start with http:// or https://)"
-                )
-        if self.network.https_proxy:
-            proxy = self.network.https_proxy.strip()
-            if proxy and not proxy.startswith(("http://", "https://")):
-                errors.append(
-                    f"Invalid https_proxy: '{proxy}' "
                     "(must start with http:// or https://)"
                 )
 
@@ -1730,14 +1544,10 @@ class GlobalSettings:
             "scheduler": self.scheduler.to_dict(),
             "cache": self.cache.to_dict(),
             "auth": self.auth.to_dict(),
-            "mcp": self.mcp.to_dict(),
             "huggingface": self.huggingface.to_dict(),
             "modelscope": self.modelscope.to_dict(),
-            "network": self.network.to_dict(),
             "sampling": self.sampling.to_dict(),
             "logging": self.logging.to_dict(),
-            "claude_code": self.claude_code.to_dict(),
-            "integrations": self.integrations.to_dict(),
             "ui": self.ui.to_dict(),
             "usage": self.usage.to_dict(),
             "idle_timeout": self.idle_timeout.to_dict(),

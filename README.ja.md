@@ -68,8 +68,6 @@ brew update && brew upgrade omlx
 # バックグラウンドサービスとして実行（クラッシュ時に自動再起動）
 brew services start omlx
 
-# オプション: MCP（Model Context Protocol）サポート
-/opt/homebrew/opt/omlx/libexec/bin/pip install mcp
 ```
 
 オプションの GLM-5.2 / MiniMax M3 ネイティブカスタムカーネルは、現在 HEAD ビルドが必要です:
@@ -84,7 +82,6 @@ brew install omlx --HEAD --with-custom-kernel
 git clone https://github.com/jundot/omlx.git
 cd omlx
 pip install -e .          # コアのみ
-pip install -e ".[mcp]"   # MCP（Model Context Protocol）サポート付き
 
 # オプション: GLM-5.2 / MiniMax M3 ネイティブカスタムカーネル
 OMLX_WITH_CUSTOM_KERNEL=1 pip install -e .
@@ -96,7 +93,7 @@ Python 3.10+とApple Silicon（M1/M2/M3/M4/M5）が必要です。
 
 ### macOSアプリ
 
-ApplicationsフォルダからoMLXを起動します。ウェルカム画面が3つのステップを案内します — モデルディレクトリの設定、サーバー起動、最初のモデルダウンロード。以上です。OpenClaw、OpenCode、Codex、Hermes Agent、Copilotに接続するには、[統合](#統合)を参照してください。
+ApplicationsフォルダからoMLXを起動します。ウェルカム画面が3つのステップを案内します — モデルディレクトリの設定、サーバー起動、最初のモデルダウンロード。以上です。
 
 <p align="center">
   <img src="docs/images/Screenshot 2026-02-10 at 00.36.32.png" alt="oMLX ウェルカム画面" width="360">
@@ -159,10 +156,6 @@ vLLMにインスパイアされたブロックベースのKVキャッシュ管�
 
 mlx-lmのBatchGeneratorを通じて同時リクエストを処理します。最大同時リクエスト数はCLIまたは管理パネルで設定できます。
 
-### Claude Code最適化
-
-Claude Codeで小さなコンテキストモデルを実行するためのコンテキストスケーリングをサポートします。報告されるトークン数をスケーリングすることで自動圧縮が適切なタイミングでトリガーされ、長いプリフィル中の読み取りタイムアウトを防ぐSSE keep-aliveを提供します。
-
 ### マルチモデルサービング
 
 同一サーバーでLLM、VLM、エンベディングモデル、リランカーをロードします。自動と手動の制御を組み合わせてモデルを管理します：
@@ -193,21 +186,12 @@ Claude Codeで小さなコンテキストモデルを実行するためのコン
   <img src="docs/images/ScreenShot_2026-03-14_104350_610.png" alt="oMLX チャット" width="720">
 </p>
 
-
 ### モデルダウンロード
 
 管理画面からHuggingFaceのMLXモデルを直接検索してダウンロードします。モデルカードの確認、ファイルサイズの確認、ワンクリックダウンロードが可能です。
 
 <p align="center">
   <img src="docs/images/downloader_omlx.png" alt="oMLX モデルダウンロード" width="720">
-</p>
-
-### 統合
-
-管理画面からOpenClaw、OpenCode、Codex、Hermes Agent、Copilot、Piをワンクリックで設定できます。設定ファイルを手動で編集する必要はありません。
-
-<p align="center">
-  <img src="docs/images/omlx_integrations.png" alt="oMLX 統合" width="720">
 </p>
 
 ### パフォーマンスベンチマーク
@@ -241,7 +225,7 @@ OpenAIとAnthropic APIのドロップイン代替です。ストリーミング�
 
 ### ツール呼び出し＆構造化出力
 
-mlx-lmで利用可能なすべての関数呼び出し形式、JSONスキーマバリデーション、MCPツール統合をサポートします。ツール呼び出しにはモデルのチャットテンプレートが`tools`パラメータをサポートしている必要があります。以下のモデルファミリーがmlx-lmの内蔵ツールパーサーを通じて自動検出されます：
+mlx-lmで利用可能なすべての関数呼び出し形式、JSONスキーマバリデーションをサポートします。ツール呼び出しにはモデルのチャットテンプレートが`tools`パラメータをサポートしている必要があります。以下のモデルファミリーがmlx-lmの内蔵ツールパーサーを通じて自動検出されます：
 
 | モデルファミリー | 形式 |
 |---|---|
@@ -296,9 +280,6 @@ omlx serve --model-dir ~/models --hot-cache-max-size 20%
 
 # 最大同時リクエスト数の調整（デフォルト: 8）
 omlx serve --model-dir ~/models --max-concurrent-requests 16
-
-# MCPツールの使用
-omlx serve --model-dir ~/models --mcp-config mcp.json
 
 # APIキー認証
 omlx serve --model-dir ~/models --api-key your-secret-key

@@ -71,21 +71,9 @@
                 scheduler: { max_concurrent_requests: 8, embedding_batch_size: 32, chunked_prefill: false, prefill_priority: 'context', decode_fairness: true },
                 cache: { enabled: true, ssd_cache_dir: '', ssd_cache_max_size: 'auto', hot_cache_max_size: '0', hot_cache_write_through: false, ane_compile_cache: false, initial_cache_blocks: 256, hot_cache_only: false, gdn_snapshot_storage: 'auto', gdn_ssd_split_enabled: true, gdn_ssd_pending_max_size: '512MB', gdn_sidecar_precision: 'fp32' },
                 sampling: { max_context_window: 32768, max_context_window_policy: null, max_tokens: 32768, temperature: 1.0, top_p: 0.95, top_k: 0, repetition_penalty: 1.0 },
-                mcp: { config_path: '', expose_tools: true },
                 usage: { usage_history: true },
                 huggingface: { endpoint: '', hf_cache_enabled: true, hf_cache_path: '' },
-                network: { http_proxy: '', https_proxy: '', no_proxy: '', ca_bundle: '' },
                 auth: { api_key_set: false, api_key: '', skip_api_key_verification: false, sub_keys: [] },
-                claude_code: { mode: 'cloud', opus_model: null, sonnet_model: null, haiku_model: null },
-                integrations: {
-                    copilot_model: null,
-                    codex_model: null,
-                    opencode_model: null,
-                    openclaw_model: null,
-                    hermes_model: null,
-                    pi_model: null,
-                    openclaw_tools_profile: 'full',
-                },
                 ui: { language: 'en' },
                 idle_timeout: { idle_timeout_seconds: null },
                 system: { total_memory_bytes: 0, total_memory: '', auto_model_memory: '', ssd_total_bytes: 0, ssd_total: '' },
@@ -757,13 +745,9 @@
                             scheduler: { ...this.globalSettings.scheduler, ...data.scheduler },
                             cache: { ...this.globalSettings.cache, ...data.cache },
                             sampling: { ...this.globalSettings.sampling, ...data.sampling },
-                            mcp: { ...this.globalSettings.mcp, ...data.mcp },
                             usage: { ...this.globalSettings.usage, ...data.usage },
                             huggingface: { ...this.globalSettings.huggingface, ...data.huggingface },
-                            network: { ...this.globalSettings.network, ...data.network },
                             auth: { ...this.globalSettings.auth, ...data.auth },
-                            claude_code: { ...this.globalSettings.claude_code, ...data.claude_code },
-                            integrations: { ...this.globalSettings.integrations, ...data.integrations },
                             idle_timeout: { ...this.globalSettings.idle_timeout, ...data.idle_timeout },
                             system: { ...this.globalSettings.system, ...data.system },
                         };
@@ -940,15 +924,9 @@
                             sampling_top_p: this.globalSettings.sampling.top_p,
                             sampling_top_k: this.globalSettings.sampling.top_k,
                             sampling_repetition_penalty: this.globalSettings.sampling.repetition_penalty,
-                            mcp_config: this.globalSettings.mcp.config_path,
-                            mcp_expose_tools: this.globalSettings.mcp.expose_tools,
                             usage_history: this.globalSettings.usage.usage_history,
                             hf_cache_enabled: this.globalSettings.huggingface.hf_cache_enabled,
                             hf_endpoint: this.globalSettings.huggingface.endpoint || '',
-                            network_http_proxy: this.globalSettings.network.http_proxy,
-                            network_https_proxy: this.globalSettings.network.https_proxy,
-                            network_no_proxy: this.globalSettings.network.no_proxy,
-                            network_ca_bundle: this.globalSettings.network.ca_bundle,
                             ...(this.globalSettings.auth.api_key ? { api_key: this.globalSettings.auth.api_key } : {}),
                             skip_api_key_verification: this.globalSettings.auth.skip_api_key_verification,
                             idle_timeout_seconds: this.globalSettings.idle_timeout?.idle_timeout_seconds ?? null,
@@ -2553,125 +2531,6 @@
             get llmModels() {
                 return this.models.filter(m => m.model_type === 'llm' || m.model_type === 'vlm' || !m.model_type);
             },
-
-            shellQuote(value) {
-                const s = String(value ?? '');
-                if (!s) return "''";
-                return `'${s.replace(/'/g, `'"'"'`)}'`;
-            },
-
-            shellEnvAssign(name, value) {
-                return `${name}=${this.shellQuote(value)}`;
-            },
-
-            get claudeCodeCommand() {
-                const mode = this.globalSettings.claude_code.mode;
-                if (mode === 'cloud') {
-                    return 'env -u ANTHROPIC_BASE_URL -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_DEFAULT_OPUS_MODEL -u ANTHROPIC_DEFAULT_SONNET_MODEL -u ANTHROPIC_DEFAULT_HAIKU_MODEL -u API_TIMEOUT_MS -u CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC claude';
-                }
-                // Local mode
-                const port = this.stats.port || 8000;
-                const opusModel = this.globalSettings.claude_code.opus_model || 'select-a-model';
-                const sonnetModel = this.globalSettings.claude_code.sonnet_model || 'select-a-model';
-                const haikuModel = this.globalSettings.claude_code.haiku_model || 'select-a-model';
-                const parts = [];
-                parts.push(this.shellEnvAssign('ANTHROPIC_BASE_URL', `http://${this.displayHost}:${port}`));
-                if (this.stats.api_key) {
-                    parts.push(this.shellEnvAssign('ANTHROPIC_AUTH_TOKEN', this.stats.api_key));
-                }
-                parts.push(this.shellEnvAssign('ANTHROPIC_DEFAULT_OPUS_MODEL', opusModel));
-                parts.push(this.shellEnvAssign('ANTHROPIC_DEFAULT_SONNET_MODEL', sonnetModel));
-                parts.push(this.shellEnvAssign('ANTHROPIC_DEFAULT_HAIKU_MODEL', haikuModel));
-                parts.push('API_TIMEOUT_MS=3000000');
-                parts.push('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1');
-                // Deny LSP: its schema joins the tools array mid-session and
-                // re-prefills the whole conversation on a caching server (#2349).
-                parts.push('claude --disallowedTools LSP');
-                return parts.join(' ');
-            },
-
-            async saveClaudeCodeSettings() {
-                try {
-                    const response = await fetch('/admin/api/global-settings', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            claude_code_mode: this.globalSettings.claude_code.mode,
-                            claude_code_opus_model: this.globalSettings.claude_code.opus_model,
-                            claude_code_sonnet_model: this.globalSettings.claude_code.sonnet_model,
-                            claude_code_haiku_model: this.globalSettings.claude_code.haiku_model,
-                        }),
-                    });
-                    if (!response.ok) {
-                        console.error('Failed to save Claude Code settings');
-                    }
-                } catch (err) {
-                    console.error('Failed to save Claude Code settings:', err);
-                }
-            },
-
-            _launchCmd(tool) {
-                const raw = this.stats.cli_prefix || 'omlx';
-                const cli = raw === 'omlx' ? raw : this.shellQuote(raw);
-                return `${cli} launch ${tool}`;
-            },
-
-            get claudeCommand() {
-                return this._launchCmd('claude');
-            },
-
-            get codexCommand() {
-                return this._launchCmd('codex');
-            },
-
-            get codexAppCommand() {
-                return this._launchCmd('codex_app');
-            },
-
-            get copilotCommand() {
-                return this._launchCmd('copilot');
-            },
-
-            get opencodeCommand() {
-                return this._launchCmd('opencode');
-            },
-
-            get openclawCommand() {
-                const profile = this.globalSettings.integrations.openclaw_tools_profile || 'coding';
-                return `${this._launchCmd('openclaw')} --tools-profile ${profile}`;
-            },
-
-            get hermesCommand() {
-                return this._launchCmd('hermes');
-            },
-
-            get piCommand() {
-                return this._launchCmd('pi');
-            },
-
-            async saveIntegrationSettings() {
-                try {
-                    const response = await fetch('/admin/api/global-settings', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            integrations_copilot_model: this.globalSettings.integrations.copilot_model,
-                            integrations_codex_model: this.globalSettings.integrations.codex_model,
-                            integrations_opencode_model: this.globalSettings.integrations.opencode_model,
-                            integrations_openclaw_model: this.globalSettings.integrations.openclaw_model,
-                            integrations_hermes_model: this.globalSettings.integrations.hermes_model,
-                            integrations_pi_model: this.globalSettings.integrations.pi_model,
-                            integrations_openclaw_tools_profile: this.globalSettings.integrations.openclaw_tools_profile,
-                        }),
-                    });
-                    if (!response.ok) {
-                        console.error('Failed to save integration settings');
-                    }
-                } catch (err) {
-                    console.error('Failed to save integration settings:', err);
-                }
-            },
-
             async saveLanguage(lang) {
                 try {
                     const response = await fetch('/admin/api/global-settings', {

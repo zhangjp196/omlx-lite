@@ -7,7 +7,6 @@ These models define the request and response schemas for:
 - Chat completions
 - Text completions
 - Tool calling
-- MCP (Model Context Protocol) integration
 """
 
 import json
@@ -536,61 +535,6 @@ class ModelsResponse(BaseModel):
 
     object: str = "list"
     data: List[ModelInfo]
-
-
-# =============================================================================
-# MCP (Model Context Protocol)
-# =============================================================================
-
-
-class MCPToolInfo(BaseModel):
-    """Information about an MCP tool."""
-
-    name: str
-    description: str
-    server: str
-    parameters: dict = Field(default_factory=dict)
-
-
-class MCPToolsResponse(BaseModel):
-    """Response for listing MCP tools."""
-
-    tools: List[MCPToolInfo]
-    count: int
-
-
-class MCPServerInfo(BaseModel):
-    """Information about an MCP server."""
-
-    name: str
-    state: str
-    transport: str
-    tools_count: int
-    error: Optional[str] = None
-
-
-class MCPServersResponse(BaseModel):
-    """Response for listing MCP servers."""
-
-    servers: List[MCPServerInfo]
-
-
-class MCPExecuteRequest(BaseModel):
-    """Request to execute an MCP tool."""
-
-    model_config = {"populate_by_name": True}
-
-    tool_name: str = Field(validation_alias=AliasChoices("tool_name", "tool"))
-    arguments: dict = Field(default_factory=dict)
-
-
-class MCPExecuteResponse(BaseModel):
-    """Response from executing an MCP tool."""
-
-    tool_name: str
-    content: Optional[Union[str, list, dict]] = None
-    is_error: bool = False
-    error_message: Optional[str] = None
 
 
 # =============================================================================

@@ -55,11 +55,10 @@ final class LocalizationSmokeTests: XCTestCase {
         "welcome.window.title", "welcome.button.start_server",
         // Main app shell
         "about.section.project", "about.license.name",
-        "logs.section.title", "network.section.proxies.title",
+        "logs.section.title",
         // Server-side screens
         "server.section.advanced", "server.row.base_path",
         "security.section.api_key", "security.api_key.row_label",
-        "integrations.section.claude_code", "integrations.tool.codex",
         "performance.section.cache", "performance.cache.enabled",
         "status.section.system", "status.section.active_now",
         // High-density screens

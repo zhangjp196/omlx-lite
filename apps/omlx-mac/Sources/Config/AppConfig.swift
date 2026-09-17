@@ -15,7 +15,7 @@
 // Every other field (host, port, api_key, model_dirs, hf_endpoint) lives
 // in `<basePath>/settings.json` — owned by the running Python server,
 // written by AppConfig.save() when the server is offline. Unknown keys
-// in settings.json (cache, integrations, ui, …) are preserved verbatim.
+// in settings.json (cache, ui, …) are preserved verbatim.
 // While the server is running, prefer the HTTP PATCH path
 // (/admin/api/global-settings) — the server is the owner.
 //
@@ -310,7 +310,7 @@ struct AppConfig: Sendable, Equatable, Codable {
     // MARK: - Save
 
     /// Write our slice into `<basePath>/settings.json`, preserving every
-    /// other key in the file (cache, claude_code, integrations, …).
+    /// other key in the file (cache, ui, …).
     func save() throws {
         let url = AppConfig.settingsURL(basePath: basePath)
 

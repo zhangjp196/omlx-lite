@@ -64,7 +64,6 @@ omlx/
 │   ├── api/              # API models and adapters (OpenAI, Anthropic)
 │   ├── cache/            # KV cache management (paged, prefix, SSD)
 │   ├── engine/           # Inference engines (simple, batched, embedding)
-│   ├── mcp/              # Model Context Protocol integration
 │   ├── models/           # Model wrappers (LLM, embedding)
 │   ├── utils/            # Utilities
 │   ├── server.py         # FastAPI server

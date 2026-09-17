@@ -12,7 +12,6 @@ Features:
 - OpenAI-compatible chat/completions API
 - Anthropic Messages API compatibility
 - Streaming responses
-- MCP (Model Context Protocol) tool integration
 - Tool calling (Qwen/Llama formats)
 - Structured output (JSON schema validation)
 
@@ -23,9 +22,6 @@ Usage:
     # With pinned models
     omlx serve --model-dir /path/to/models --max-model-memory 48GB --pin llama-3b,qwen-7b
 
-    # With MCP tools
-    omlx serve --model-dir /path/to/models --max-model-memory 32GB --mcp-config mcp.json
-
 The server provides:
     - POST /v1/completions - Text completions
     - POST /v1/chat/completions - Chat completions
@@ -33,9 +29,6 @@ The server provides:
     - POST /v1/responses - OpenAI Responses API (Codex compatibility)
     - GET /v1/models - List available models (with load status)
     - GET /health - Health check
-    - GET /v1/mcp/tools - List MCP tools
-    - GET /v1/mcp/servers - MCP server status
-    - POST /v1/mcp/execute - Execute MCP tool
 """
 
 import argparse
@@ -249,8 +242,6 @@ class ServerState:
 
     engine_pool: Optional[EnginePool] = None
     default_model: Optional[str] = None
-    mcp_manager: Optional[object] = None
-    mcp_executor: Optional[object] = None
     sampling: SamplingDefaults = field(default_factory=SamplingDefaults)
     api_key: Optional[str] = None
     # Bind address snapshot for security checks. Unlike GlobalSettings.server.host,
@@ -288,25 +279,6 @@ def get_engine_pool() -> EnginePool:
     if _server_state.engine_pool is None:
         raise HTTPException(status_code=503, detail="Server not initialized")
     return _server_state.engine_pool
-
-
-def get_mcp_manager():
-    """Get the MCP manager instance (may be None)."""
-    return _server_state.mcp_manager
-
-
-def mcp_tools_exposed() -> bool:
-    """Whether backend MCP tools are exposed to clients.
-
-    Controlled by the dashboard toggle (Settings > Global Settings > MCP).
-    Defaults to True (backward compatible) when global settings are
-    unavailable, e.g. when MCP was started via env var/CLI without a
-    settings file.
-    """
-    gs = _server_state.global_settings
-    if gs is None:
-        return True
-    return bool(getattr(gs.mcp, "expose_tools", True))
 
 
 async def verify_api_key(
@@ -628,14 +600,6 @@ async def lifespan(app: FastAPI):
 
         ttl_task = asyncio.create_task(_ttl_check_loop())
 
-    # Initialize MCP if config provided
-    # Priority: env var > settings.json
-    mcp_config = os.environ.get("OMLX_MCP_CONFIG")
-    if not mcp_config and _server_state.global_settings:
-        mcp_config = _server_state.global_settings.mcp.config_path
-    if mcp_config:
-        await init_mcp(mcp_config)
-
     yield
 
     # Shutdown: Save all-time stats, stop TTL task, process memory enforcer, etc.
@@ -677,9 +641,6 @@ async def lifespan(app: FastAPI):
     if _server_state.ms_downloader is not None:
         await _server_state.ms_downloader.shutdown()
         logger.info("MS Downloader stopped")
-    if _server_state.mcp_manager is not None:
-        await _server_state.mcp_manager.stop()
-        logger.info("MCP manager stopped")
     if _server_state.engine_pool is not None:
         await _server_state.engine_pool.shutdown()
         _reset_boundary_snapshots_for_server()
@@ -692,13 +653,6 @@ app = FastAPI(
     version=__version__,
     lifespan=lifespan,
 )
-
-# Include MCP routes
-from .api.mcp_routes import router as mcp_router
-from .api.mcp_routes import set_mcp_manager_getter
-
-set_mcp_manager_getter(get_mcp_manager)
-app.include_router(mcp_router, dependencies=[Depends(verify_api_key)])
 
 # Include audio routes only when mlx-audio is installed.
 # audio_routes.py itself only imports fastapi/stdlib at module level, so it
@@ -2765,21 +2719,6 @@ async def health(response: Response):
     preload is still running: the port is already bound (liveness for
     watchdogs, #2184) but the server is not ready to serve those models.
     """
-    mcp_info = None
-    if _server_state.mcp_manager is not None:
-        connected = sum(
-            1
-            for s in _server_state.mcp_manager.get_server_status()
-            if s.state.value == "connected"
-        )
-        total = len(_server_state.mcp_manager.get_server_status())
-        mcp_info = {
-            "enabled": True,
-            "servers_connected": connected,
-            "servers_total": total,
-            "tools_available": len(_server_state.mcp_manager.get_all_tools()),
-        }
-
     pool_status = None
     if _server_state.engine_pool is not None:
         enforcer = _server_state.process_memory_enforcer
@@ -2803,7 +2742,6 @@ async def health(response: Response):
         "status": "loading" if loading else "healthy",
         "default_model": _server_state.default_model,
         "engine_pool": pool_status,
-        "mcp": mcp_info,
     }
 
 
@@ -3978,8 +3916,7 @@ async def create_chat_completion(
             if json_instruction:
                 messages = _inject_json_instruction(messages, json_instruction)
 
-        # Merge MCP tools with user-provided tools unless the request explicitly
-        # disables tool use.
+        # Use user-provided tools unless the request explicitly disables tool use.
         tools_disabled = request.tool_choice == "none"
         if getattr(engine, "is_diffusion_model", False) and not getattr(
             engine, "supports_tool_calling", False
@@ -3992,18 +3929,6 @@ async def create_chat_completion(
                 )
             tools_disabled = True
         effective_tools = None if tools_disabled else request.tools
-        if (
-            _server_state.mcp_manager
-            and not tools_disabled
-            and mcp_tools_exposed()
-        ):
-            # Convert Pydantic ToolDefinition models to dicts for merge_tools
-            user_tools_dicts = (
-                [t.model_dump() for t in request.tools] if request.tools else None
-            )
-            effective_tools = _server_state.mcp_manager.get_merged_tools(
-                user_tools_dicts
-            )
 
         # Validate context window before sending to model
         tools_for_template = (
@@ -4135,7 +4060,7 @@ async def create_chat_completion(
                     default_budget,
                 )
 
-        # Add tools if provided (includes MCP tools)
+        # Add tools if provided
         if tools_for_template:
             chat_kwargs["tools"] = tools_for_template
 
@@ -6383,7 +6308,7 @@ async def create_anthropic_message(
         ):
             merged_ct_kwargs["preserve_thinking"] = True
 
-        # Merge MCP tools with user-provided Anthropic tools
+        # Convert user-provided Anthropic tools to internal format.
         user_internal = convert_anthropic_tools_to_internal(request.tools)
         if getattr(engine, "is_diffusion_model", False) and not getattr(
             engine, "supports_tool_calling", False
@@ -6395,18 +6320,6 @@ async def create_anthropic_message(
                     field="tools",
                 )
             internal_tools = None
-        elif _server_state.mcp_manager and mcp_tools_exposed():
-            mcp_openai_tools = _server_state.mcp_manager.get_all_tools_openai()
-            combined = (mcp_openai_tools or []) + (user_internal or [])
-            # Deduplicate by function name (user tools take precedence)
-            if combined:
-                seen = {}
-                for tool in combined:
-                    name = tool.get("function", {}).get("name", "")
-                    seen[name] = tool
-                internal_tools = list(seen.values())
-            else:
-                internal_tools = None
         else:
             internal_tools = user_internal
         # Gemma 4 drops required params that lack descriptions — enrich them
@@ -6835,7 +6748,7 @@ async def create_response(
             else:
                 compiled_grammar = None
 
-        # Merge MCP tools
+        # Resolve effective tools
         effective_tools = (
             None
             if (
@@ -6844,12 +6757,6 @@ async def create_response(
             )
             else openai_tools
         )
-        if (
-            _server_state.mcp_manager
-            and effective_tools
-            and mcp_tools_exposed()
-        ):
-            effective_tools = _server_state.mcp_manager.get_merged_tools(openai_tools)
 
         # Convert tools for chat template
         tools_for_template = (
@@ -7942,40 +7849,6 @@ async def delete_response(
 
 
 # =============================================================================
-# MCP Initialization
-# =============================================================================
-
-
-async def init_mcp(config_path: str):
-    """Initialize MCP manager from config file."""
-    try:
-        from omlx.mcp import MCPClientManager, ToolExecutor, load_mcp_config
-
-        config = load_mcp_config(config_path)
-        _server_state.mcp_manager = MCPClientManager(config)
-        await _server_state.mcp_manager.start()
-
-        _server_state.mcp_executor = ToolExecutor(_server_state.mcp_manager)
-
-        logger.info(
-            f"MCP initialized with {len(_server_state.mcp_manager.get_all_tools())} tools"
-        )
-
-    except ImportError:
-        logger.warning(
-            "MCP SDK not installed. MCP features disabled. "
-            "Install with: pip install mcp"
-        )
-        return
-    except Exception as e:
-        logger.error(
-            f"Failed to initialize MCP: {e}. "
-            "MCP features disabled. Fix your MCP config and restart."
-        )
-        return
-
-
-# =============================================================================
 # Main Entry Point
 # =============================================================================
 
@@ -7989,9 +7862,6 @@ def main():
 Examples:
     # Multi-model serving
     python -m omlx.server --model-dir /path/to/models
-
-    # With MCP tools
-    python -m omlx.server --model-dir /path/to/models --mcp-config mcp.json
 
 Note: Use the omlx CLI for full feature support. Pinned models, default
 model and sampling defaults are managed via the admin page.
@@ -8016,12 +7886,6 @@ model and sampling defaults are managed via the admin page.
         help="Port to bind to",
     )
     parser.add_argument(
-        "--mcp-config",
-        type=str,
-        default=None,
-        help="Path to MCP configuration file (JSON/YAML)",
-    )
-    parser.add_argument(
         "--api-key",
         type=str,
         default=None,
@@ -8029,10 +7893,6 @@ model and sampling defaults are managed via the admin page.
     )
 
     args = parser.parse_args()
-
-    # Set MCP config for lifespan
-    if args.mcp_config:
-        os.environ["OMLX_MCP_CONFIG"] = args.mcp_config
 
     # Load settings and hand them to init_server the way the omlx CLI
     # does. The admin page resolves settings through

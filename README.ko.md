@@ -68,8 +68,6 @@ brew update && brew upgrade omlx
 # 백그라운드 서비스로 실행 (크래시 시 자동 재시작)
 omlx start
 
-# 선택사항: MCP (Model Context Protocol) 지원
-/opt/homebrew/opt/omlx/libexec/bin/pip install mcp
 ```
 
 선택사항인 GLM-5.2 / MiniMax M3 네이티브 커스텀 커널은 현재 HEAD 빌드가 필요합니다:
@@ -84,7 +82,6 @@ brew install jundot/omlx/omlx --HEAD --with-custom-kernel
 git clone https://github.com/jundot/omlx.git
 cd omlx
 pip install -e .          # 코어만
-pip install -e ".[mcp]"   # MCP (Model Context Protocol) 포함
 
 # GLM-5.2 / MiniMax M3 / Qwen3.5 네이티브 커스텀 커널
 # (해당 계열 모델을 서빙한다면 강력히 권장 -- 아래 노트 참고)
@@ -111,7 +108,7 @@ macOS 15.0+ (Sequoia), Python 3.11–3.13, Apple Silicon (M1/M2/M3/M4/M5)이 필
 
 ### macOS 앱
 
-Applications 폴더에서 oMLX를 실행하세요. 환영 화면에서 세 단계만 따라하면 됩니다 — 모델 디렉토리 설정, 서버 시작, 첫 모델 다운로드. 끝입니다. OpenClaw, OpenCode, Codex, Hermes Agent, Copilot에 연결하려면 [통합](#통합)을 참조하세요.
+Applications 폴더에서 oMLX를 실행하세요. 환영 화면에서 세 단계만 따라하면 됩니다 — 모델 디렉토리 설정, 서버 시작, 첫 모델 다운로드. 끝입니다.
 
 <p align="center">
   <img src="docs/images/Screenshot 2026-02-10 at 00.36.32.png" alt="oMLX 환영 화면" width="360">
@@ -196,10 +193,6 @@ vLLM에서 영감을 받은 블록 기반 KV 캐시 관리로, 프리픽스 공�
 
 mlx-lm의 BatchGenerator를 통해 동시 요청을 처리합니다. 최대 동시 요청 수는 CLI 또는 관리자 패널에서 설정할 수 있습니다.
 
-### Claude Code 최적화
-
-Claude Code에서 작은 컨텍스트 모델을 실행하기 위한 컨텍스트 스케일링을 지원합니다. Claude code에 리포팅되는 토큰 수를 스케일링하여 자동 Compact가 적절한 타이밍에 트리거되고, 긴 프리필 동안 읽기 타임아웃을 방지하는 SSE keep-alive를 제공합니다.
-
 ### 멀티 모델 서빙
 
 동일한 서버에서 LLM, VLM, 임베딩 모델, 리랭커를 로드합니다. 자동 및 수동 제어를 조합하여 모델을 관리합니다:
@@ -230,21 +223,12 @@ Claude Code에서 작은 컨텍스트 모델을 실행하기 위한 컨텍스트
   <img src="docs/images/ScreenShot_2026-03-14_104350_610.png" alt="oMLX 채팅" width="720">
 </p>
 
-
 ### 모델 다운로드
 
 관리자 대시보드에서 HuggingFace의 MLX 모델을 직접 검색하고 다운로드합니다. 모델 카드 확인, 파일 크기 확인, 원클릭 다운로드가 가능합니다.
 
 <p align="center">
   <img src="docs/images/downloader_omlx.png" alt="oMLX 모델 다운로드" width="720">
-</p>
-
-### 통합
-
-관리자 대시보드에서 OpenClaw, OpenCode, Codex, Hermes Agent, Copilot, Pi를 원클릭으로 설정합니다. 설정 파일을 수동으로 편집할 필요가 없습니다.
-
-<p align="center">
-  <img src="docs/images/omlx_integrations.png" alt="oMLX 통합" width="720">
 </p>
 
 ### 성능 벤치마크
@@ -278,7 +262,7 @@ OpenAI 및 Anthropic API를 그대로 대체합니다. 스트리밍 사용량 �
 
 ### Tool calling & 구조화된 출력
 
-mlx-lm에서 사용 가능한 모든 함수 호출 형식, JSON 스키마 검증, MCP 도구 통합을 지원합니다. Tool calling은 모델의 채팅 템플릿이 `tools` 파라미터를 지원해야 합니다. 다음 모델 패밀리가 mlx-lm의 내장 도구 파서를 통해 자동 감지됩니다:
+mlx-lm에서 사용 가능한 모든 함수 호출 형식, JSON 스키마 검증을 지원합니다. Tool calling은 모델의 채팅 템플릿이 `tools` 파라미터를 지원해야 합니다. 다음 모델 패밀리가 mlx-lm의 내장 도구 파서를 통해 자동 감지됩니다:
 
 | 모델 패밀리 | 형식 |
 |---|---|
@@ -341,9 +325,6 @@ omlx serve --model-dir ~/models --hot-cache-max-size 20%
 
 # 최대 동시 요청 수 조정 (기본값: 8)
 omlx serve --model-dir ~/models --max-concurrent-requests 16
-
-# MCP 도구 사용
-omlx serve --model-dir ~/models --mcp-config mcp.json
 
 # HuggingFace 미러 엔드포인트 (접속이 제한된 지역용)
 omlx serve --model-dir ~/models --hf-endpoint https://hf-mirror.com

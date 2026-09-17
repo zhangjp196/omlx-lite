@@ -16,7 +16,6 @@ from omlx.config import (
     SchedulerConfig,
     CacheConfig,
     PagedSSDCacheConfig,
-    MCPConfig,
     OMLXConfig,
 )
 
@@ -248,25 +247,6 @@ class TestPagedSSDCacheConfig:
         assert config.max_size_bytes == 1024**4
 
 
-class TestMCPConfig:
-    """Test cases for MCPConfig dataclass."""
-
-    def test_default_values(self):
-        """Test default configuration values."""
-        config = MCPConfig()
-        assert config.config_path is None
-        assert config.enabled is False
-
-    def test_custom_values(self):
-        """Test custom configuration values."""
-        config = MCPConfig(
-            config_path="/path/to/mcp.json",
-            enabled=True,
-        )
-        assert config.config_path == "/path/to/mcp.json"
-        assert config.enabled is True
-
-
 class TestOMLXConfig:
     """Test cases for OMLXConfig dataclass."""
 
@@ -279,7 +259,6 @@ class TestOMLXConfig:
         assert isinstance(config.scheduler, SchedulerConfig)
         assert isinstance(config.cache, CacheConfig)
         assert isinstance(config.paged_ssd_cache, PagedSSDCacheConfig)
-        assert isinstance(config.mcp, MCPConfig)
         assert config.continuous_batching is False
 
     def test_from_env_default(self):
@@ -326,16 +305,6 @@ class TestOMLXConfig:
             assert config.paged_ssd_cache.cache_dir == Path("/tmp/ssd_cache")
             assert config.paged_ssd_cache.max_size == "50GB"
 
-    def test_from_env_mcp(self):
-        """Test from_env with MCP environment variables."""
-        env_vars = {
-            "OMLX_MCP_CONFIG": "/path/to/mcp.json",
-        }
-        with patch.dict(os.environ, env_vars, clear=True):
-            config = OMLXConfig.from_env()
-            assert config.mcp.enabled is True
-            assert config.mcp.config_path == "/path/to/mcp.json"
-
     def test_from_cli_args(self):
         """Test from_cli_args with argparse namespace."""
         args = Namespace(
@@ -351,7 +320,6 @@ class TestOMLXConfig:
             continuous_batching=True,
             paged_ssd_cache_dir=None,
             paged_ssd_cache_max_size=None,
-            mcp_config=None,
         )
         with patch.dict(os.environ, {}, clear=True):
             config = OMLXConfig.from_cli_args(args)
@@ -373,16 +341,6 @@ class TestOMLXConfig:
             assert config.paged_ssd_cache.cache_dir == Path("/tmp/ssd_cache")
             assert config.paged_ssd_cache.max_size == "50GB"
 
-    def test_from_cli_args_mcp(self):
-        """Test from_cli_args with MCP arguments."""
-        args = Namespace(
-            mcp_config="/path/to/mcp.json",
-        )
-        with patch.dict(os.environ, {}, clear=True):
-            config = OMLXConfig.from_cli_args(args)
-            assert config.mcp.enabled is True
-            assert config.mcp.config_path == "/path/to/mcp.json"
-
     def test_to_dict(self):
         """Test to_dict method."""
         config = OMLXConfig()
@@ -394,7 +352,6 @@ class TestOMLXConfig:
         assert "scheduler" in result
         assert "cache" in result
         assert "paged_ssd_cache" in result
-        assert "mcp" in result
         assert "continuous_batching" in result
 
         assert result["server"]["host"] == "0.0.0.0"

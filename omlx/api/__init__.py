@@ -34,13 +34,6 @@ from .openai_models import (
     Usage,
     ModelInfo,
     ModelsResponse,
-    # MCP
-    MCPToolInfo,
-    MCPToolsResponse,
-    MCPServerInfo,
-    MCPServersResponse,
-    MCPExecuteRequest,
-    MCPExecuteResponse,
 )
 
 from .utils import (
@@ -132,9 +125,6 @@ from .embedding_utils import (
     normalize_input,
 )
 
-# MCP routes
-from .mcp_routes import router as mcp_router, set_mcp_manager_getter
-
 __all__ = [
     # Models
     "ContentPart",
@@ -155,12 +145,6 @@ __all__ = [
     "Usage",
     "ModelInfo",
     "ModelsResponse",
-    "MCPToolInfo",
-    "MCPToolsResponse",
-    "MCPServerInfo",
-    "MCPServersResponse",
-    "MCPExecuteRequest",
-    "MCPExecuteResponse",
     # Utils
     "clean_output_text",
     "clean_special_tokens",
@@ -229,7 +213,4 @@ __all__ = [
     "truncate_embedding",
     "count_tokens",
     "normalize_input",
-    # MCP routes
-    "mcp_router",
-    "set_mcp_manager_getter",
 ]

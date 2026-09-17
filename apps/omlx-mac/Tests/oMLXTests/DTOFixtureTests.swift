@@ -109,7 +109,7 @@ final class DTOFixtureTests: XCTestCase {
         XCTAssertNotNil(stats.host)
         XCTAssertNotNil(stats.port)
         XCTAssertNotNil(stats.cliPrefix,
-                        "Stats must carry cli_prefix so Integrations can render `omlx launch …` commands.")
+                        "Stats must carry cli_prefix for CLI command rendering.")
         XCTAssertNotNil(stats.apiKey,
                         "Stats must surface api_key (empty string allowed) so the Welcome-skip path can recover it.")
 
@@ -135,12 +135,10 @@ final class DTOFixtureTests: XCTestCase {
         let data = try fixture("global-settings")
         let settings = try Self.makeDecoder().decode(GlobalSettingsDTO.self, from: data)
 
-        // Sub-structures Server / Status / Integrations screens depend on.
+        // Sub-structures the Server / Status screens depend on.
         XCTAssertNotNil(settings.server,        "server block missing")
         XCTAssertNotNil(settings.model,         "model block missing")
         XCTAssertNotNil(settings.auth,          "auth block missing")
-        XCTAssertNotNil(settings.claudeCode,    "claude_code block missing")
-        XCTAssertNotNil(settings.integrations,  "integrations block missing")
         XCTAssertEqual(settings.scheduler?.embeddingBatchSize, 32)
         XCTAssertEqual(settings.huggingface?.hfCacheEnabled, true)
     }

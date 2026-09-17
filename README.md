@@ -68,8 +68,6 @@ brew update && brew upgrade omlx
 # Run as a background service (auto-restarts on crash)
 omlx start
 
-# Optional: MCP (Model Context Protocol) support
-/opt/homebrew/opt/omlx/libexec/bin/pip install mcp
 ```
 
 Optional GLM-5.2 / MiniMax M3 native custom kernels currently require a HEAD build:
@@ -84,7 +82,6 @@ brew install jundot/omlx/omlx --HEAD --with-custom-kernel
 git clone https://github.com/jundot/omlx.git
 cd omlx
 pip install -e .          # Core only
-pip install -e ".[mcp]"   # With MCP (Model Context Protocol) support
 
 # GLM-5.2 / MiniMax M3 / Qwen3.5 native custom kernels (strongly recommended
 # if you serve those families -- see note below)
@@ -112,7 +109,7 @@ Requires macOS 15.0+ (Sequoia), Python 3.11–3.13, and Apple Silicon (M1/M2/M3/
 
 ### macOS App
 
-Launch oMLX from your Applications folder. The Welcome screen guides you through three steps - model directory, server start, and first model download. That's it. To connect OpenClaw, OpenCode, Codex, Hermes Agent, or Copilot, see [Integrations](#integrations).
+Launch oMLX from your Applications folder. The Welcome screen guides you through three steps - model directory, server start, and first model download. That's it.
 
 <p align="center">
   <img src="docs/images/Screenshot 2026-02-10 at 00.36.32.png" alt="oMLX Welcome Screen" width="360">
@@ -199,10 +196,6 @@ Block-based KV cache management inspired by vLLM, with prefix sharing and Copy-o
 
 Handles concurrent requests through mlx-lm's BatchGenerator. Max concurrent requests is configurable via CLI or admin panel.
 
-### Claude Code Optimization
-
-Context scaling support for running smaller context models with Claude Code. Scales reported token counts so that auto-compact triggers at the right timing, and SSE keep-alive prevents read timeouts during long prefill.
-
 ### Multi-Model Serving
 
 Load LLMs, VLMs, embedding models, and rerankers within the same server. Models are managed through a combination of automatic and manual controls:
@@ -233,21 +226,12 @@ Chat directly with any loaded model from the admin panel. Supports conversation 
   <img src="docs/images/ScreenShot_2026-03-14_104350_610.png" alt="oMLX Chat" width="720">
 </p>
 
-
 ### Model Downloader
 
 Search and download MLX models from HuggingFace directly in the admin dashboard. Browse model cards, check file sizes, and download with one click.
 
 <p align="center">
   <img src="docs/images/downloader_omlx.png" alt="oMLX Model Downloader" width="720">
-</p>
-
-### Integrations
-
-Set up OpenClaw, OpenCode, Codex, Hermes Agent, Copilot, and Pi directly from the admin dashboard with a single click. No manual config editing required.
-
-<p align="center">
-  <img src="docs/images/omlx_integrations.png" alt="oMLX Integrations" width="720">
 </p>
 
 ### Performance Benchmark
@@ -281,7 +265,7 @@ Drop-in replacement for OpenAI and Anthropic APIs. Supports streaming usage stat
 
 ### Tool Calling & Structured Output
 
-Supports all function calling formats available in mlx-lm, JSON schema validation, and MCP tool integration. Tool calling requires the model's chat template to support the `tools` parameter. The following model families are auto-detected:
+Supports all function calling formats available in mlx-lm and JSON schema validation. Tool calling requires the model's chat template to support the `tools` parameter. The following model families are auto-detected:
 
 | Model Family | Format |
 |---|---|
@@ -345,9 +329,6 @@ omlx serve --model-dir ~/models --hot-cache-max-size 20%
 
 # Adjust max concurrent requests (default: 8)
 omlx serve --model-dir ~/models --max-concurrent-requests 16
-
-# With MCP tools
-omlx serve --model-dir ~/models --mcp-config mcp.json
 
 # HuggingFace mirror endpoint (for restricted regions)
 omlx serve --model-dir ~/models --hf-endpoint https://hf-mirror.com

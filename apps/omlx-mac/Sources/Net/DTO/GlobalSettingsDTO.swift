@@ -46,10 +46,6 @@ struct GlobalSettingsDTO: Codable, Equatable, Sendable {
     let sampling: SamplingDTO?
     let huggingface: HuggingFaceDTO?
     let modelscope: ModelScopeDTO?
-    let network: NetworkDTO?
-    let claudeCode: ClaudeCodeSettings?
-    let integrations: IntegrationsSettings?
-    let mcp: MCPSettings?
     let usage: UsageSettings?
 
     struct ServerSettings: Codable, Equatable, Sendable {
@@ -151,32 +147,6 @@ struct GlobalSettingsDTO: Codable, Equatable, Sendable {
         let repetitionPenalty: Double
     }
 
-    struct ClaudeCodeSettings: Codable, Equatable, Sendable {
-        let contextScalingEnabled: Bool?
-        let targetContextSize: Int?
-        let mode: String?
-        let opusModel: String?
-        let sonnetModel: String?
-        let haikuModel: String?
-    }
-
-    struct IntegrationsSettings: Codable, Equatable, Sendable {
-        let codexModel: String?
-        let opencodeModel: String?
-        let openclawModel: String?
-        let piModel: String?
-        let openclawToolsProfile: String?
-        let hermesModel: String?
-        let copilotModel: String?
-    }
-
-    /// Mirrors `omlx.settings.MCPSettings`. The server stores a single path to
-    /// an MCP config file consumed by every integration launcher (Claude
-    /// Code, OpenClaw, Hermes, …). Empty / nil means no MCP server is wired.
-    struct MCPSettings: Codable, Equatable, Sendable {
-        let configPath: String?
-    }
-
     /// Mirrors `omlx.settings.UsageSettings`. `usage_history` switches the
     /// local hourly serving history behind Status → Usage History. Patched
     /// via the flat `usage_history` key; the server applies it live and keeps
@@ -190,21 +160,10 @@ struct GlobalSettingsDTO: Codable, Equatable, Sendable {
     struct ModelScopeDTO: Codable, Equatable, Sendable {
         let endpoint: String
     }
-
-    /// Mirrors `omlx.settings.NetworkSettings`. All four fields are simple
-    /// strings; empty string = unset. Patched via `network_*` flat keys.
-    struct NetworkDTO: Codable, Equatable, Sendable {
-        let httpProxy: String
-        let httpsProxy: String
-        let noProxy: String
-        let caBundle: String
-    }
 }
 
 /// Patch body for POST /admin/api/global-settings. Fields are flat (not
-/// nested) — the server merges any non-nil field. PR 7 wires the server tab's
-/// fields; PR 9 adds the Claude Code + integrations + auth fields needed by
-/// IntegrationsScreen and SecurityScreen.
+/// nested) — the server merges any non-nil field.
 struct GlobalSettingsPatch: Encodable, Equatable, Sendable {
     // Server (PR 7)
     var host: String? = nil
@@ -224,28 +183,6 @@ struct GlobalSettingsPatch: Encodable, Equatable, Sendable {
     var autoStartOnLaunch: Bool? = nil
     /// Human-readable cap such as `100MB` or `1GB`. Applied immediately.
     var maxAudioUploadSize: String? = nil
-
-    // Claude Code (PR 9)
-    var claudeCodeContextScalingEnabled: Bool? = nil
-    var claudeCodeTargetContextSize: Int? = nil
-    var claudeCodeMode: String? = nil
-    var claudeCodeOpusModel: String? = nil
-    var claudeCodeSonnetModel: String? = nil
-    var claudeCodeHaikuModel: String? = nil
-
-    // Other integrations (PR 9)
-    var integrationsCodexModel: String? = nil
-    var integrationsOpencodeModel: String? = nil
-    var integrationsOpenclawModel: String? = nil
-    var integrationsPiModel: String? = nil
-    var integrationsOpenclawToolsProfile: String? = nil
-    var integrationsHermesModel: String? = nil
-    var integrationsCopilotModel: String? = nil
-
-    /// Path to an MCP server config file. Empty string clears the field on
-    /// the server (`global_settings.mcp.config_path = None`). Shared across
-    /// every integration launcher.
-    var mcpConfig: String? = nil
 
     /// Record local usage history (Status → Usage History). Applied at
     /// runtime; turning it off keeps the existing usage.sqlite3 so turning
@@ -282,14 +219,6 @@ struct GlobalSettingsPatch: Encodable, Equatable, Sendable {
     /// ModelScope mirror endpoint. Empty string = use modelscope.cn.
     /// Patched via `ms_endpoint` (encoder converts to snake_case).
     var msEndpoint: String? = nil
-
-    /// Process-wide outbound HTTP proxy. Empty string = unset. The server
-    /// applies via env vars (HTTP_PROXY / HTTPS_PROXY / NO_PROXY /
-    /// SSL_CERT_FILE) so HF, MS, and Sparkle all pick them up.
-    var networkHttpProxy: String? = nil
-    var networkHttpsProxy: String? = nil
-    var networkNoProxy: String? = nil
-    var networkCaBundle: String? = nil
 
     // Phase 3 — Performance / Memory / Cache / Lifecycle.
     //

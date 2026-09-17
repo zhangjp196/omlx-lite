@@ -107,7 +107,7 @@ where the kernel path is identical, rounding-bounded where it is not.
 ## DeepSeek V4.1
 
 DeepSeek V4.1 uses its own expert adapter and loader. Both the original
-checkpoint and oMLX converted MXFP/oQ checkpoints are supported. Expert
+checkpoint and oMLX Lite converted MXFP/oQ checkpoints are supported. Expert
 weights stay in the existing safetensors files. The resident fraction applies
 to the routed experts in each backbone layer, with capacity floored at the
 number selected by one token. Shared experts, attention, and other backbone

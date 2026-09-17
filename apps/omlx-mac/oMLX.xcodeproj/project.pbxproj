@@ -732,7 +732,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 0.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = app.omlx;
-				PRODUCT_NAME = "oMlx lite";
+				PRODUCT_NAME = "oMLX Lite";
 				PRODUCT_MODULE_NAME = oMLX;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
@@ -759,7 +759,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 0.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = app.omlx;
-				PRODUCT_NAME = "oMlx lite";
+				PRODUCT_NAME = "oMLX Lite";
 				PRODUCT_MODULE_NAME = oMLX;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
@@ -779,7 +779,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/oMlx lite.app/Contents/MacOS/oMlx lite";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/oMLX Lite.app/Contents/MacOS/oMLX Lite";
 			};
 			name = Debug;
 		};
@@ -796,7 +796,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/oMlx lite.app/Contents/MacOS/oMlx lite";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/oMLX Lite.app/Contents/MacOS/oMLX Lite";
 			};
 			name = Release;
 		};

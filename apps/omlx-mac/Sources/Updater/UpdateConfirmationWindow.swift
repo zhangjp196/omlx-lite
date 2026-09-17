@@ -21,7 +21,7 @@ final class UpdateConfirmationWindowController: NSWindowController {
             defer: false
         )
         window.title = String(localized: "update.confirm.window_title",
-                              defaultValue: "oMLX Update",
+                              defaultValue: "oMLX Lite Update",
                               comment: "Title bar of the update confirmation window")
         window.isReleasedWhenClosed = false
         super.init(window: window)
@@ -111,7 +111,7 @@ struct UpdateConfirmationView: View {
                      gradient: SquircleGradient.update)
             VStack(alignment: .leading, spacing: 4) {
                 Text(String(localized: "update.confirm.title",
-                            defaultValue: "oMLX \(update.version) is available",
+                            defaultValue: "oMLX Lite \(update.version) is available",
                             comment: "Update confirmation sheet title; placeholder is the version"))
                     .font(.omlxText(17, weight: .semibold))
                     .foregroundStyle(theme.text)
@@ -181,7 +181,7 @@ struct UpdateConfirmationView: View {
                     .font(.omlxText(11))
                     .foregroundStyle(theme.textSecondary)
                 Text(String(localized: "update.confirm.restart_notice",
-                            defaultValue: "oMLX will quit, install the update, and relaunch.",
+                            defaultValue: "oMLX Lite will quit, install the update, and relaunch.",
                             comment: "Notice explaining what happens after confirming an update"))
                     .font(.omlxText(11))
                     .foregroundStyle(theme.textTertiary)

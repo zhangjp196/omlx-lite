@@ -120,17 +120,17 @@ final class MenubarVisibilityWatcher {
         MenubarLog.write("hidden alert shown")
 
         let alert = NSAlert()
-        alert.messageText = "oMLX Menubar Icon Hidden"
+        alert.messageText = "oMLX Lite Menubar Icon Hidden"
 
         if MenubarIconRecovery.isTahoeOrNewer {
             alert.informativeText = """
-            The oMLX menubar icon isn't showing up.
+            The oMLX Lite menubar icon isn't showing up.
 
             On macOS Tahoe this is usually caused by the StatusKit approval \
             flag being false in system preferences. Auto-Fix will approve \
-            oMLX and restart ControlCenter. It needs Full Disk Access.
+            oMLX Lite and restart ControlCenter. It needs Full Disk Access.
 
-            You can also enable oMLX manually in System Settings > Menu Bar, \
+            You can also enable oMLX Lite manually in System Settings > Menu Bar, \
             or run this again later from Settings > Appearance > Menu Bar Icon.
             """
             alert.addButton(withTitle: "Auto-Fix")
@@ -139,10 +139,10 @@ final class MenubarVisibilityWatcher {
             alert.addButton(withTitle: "Dismiss")
         } else {
             alert.informativeText = """
-            The oMLX menubar icon isn't showing up.
+            The oMLX Lite menubar icon isn't showing up.
 
             macOS before Tahoe doesn't offer a System Settings toggle for \
-            third-party menubar apps. Try quitting and relaunching oMLX, \
+            third-party menubar apps. Try quitting and relaunching oMLX Lite, \
             and check menubar manager tools like Bartender or Ice if you \
             use them.
             """
@@ -319,11 +319,11 @@ enum MenubarIconRecovery {
             MenubarLog.write("restore: rebuilt status items (pre-Tahoe, no StatusKit repair)")
             showRestoreResultAlert(
                 message: """
-                oMLX rebuilt its menu bar item.
+                oMLX Lite rebuilt its menu bar item.
 
                 macOS before Tahoe doesn't offer a System Settings toggle for \
                 third-party menubar apps. If the icon still doesn't appear, \
-                quit and relaunch oMLX, and check menubar manager tools like \
+                quit and relaunch oMLX Lite, and check menubar manager tools like \
                 Bartender or Ice if you use them.
                 """,
                 offerSettings: false
@@ -342,7 +342,7 @@ enum MenubarIconRecovery {
             return
         }
         showRestoreResultAlert(
-            message: "oMLX rebuilt its menu bar item.\n\n\(result.message)",
+            message: "oMLX Lite rebuilt its menu bar item.\n\n\(result.message)",
             offerSettings: true
         )
     }
@@ -525,7 +525,7 @@ enum MenubarIconRecovery {
             return AutoFixOutcome(
                 success: true,
                 message: """
-                oMLX is already approved in StatusKit (\(knownIDs)). If the \
+                oMLX Lite is already approved in StatusKit (\(knownIDs)). If the \
                 icon still doesn't appear, the root cause is something else. \
                 Share the latest menubar.log with the maintainer.
                 """
@@ -571,7 +571,7 @@ enum MenubarIconRecovery {
             return AutoFixOutcome(
                 success: true,
                 message: """
-                StatusKit was updated but oMLX couldn't restart ControlCenter. \
+                StatusKit was updated but oMLX Lite couldn't restart ControlCenter. \
                 Run `killall ControlCenter` manually.
                 """
             )
@@ -579,13 +579,13 @@ enum MenubarIconRecovery {
 
         let detail = appendedNew || !foundAllowedApproval
             ? "appended a new \(primaryBundleID) entry"
-            : "approved the existing oMLX entry"
+            : "approved the existing oMLX Lite entry"
         return AutoFixOutcome(
             success: true,
             message: """
             Auto-Fix \(detail) in StatusKit and restarted ControlCenter. \
             The menubar icon should appear within a few seconds. If it \
-            still doesn't, quit and relaunch oMLX.
+            still doesn't, quit and relaunch oMLX Lite.
             """
         )
     }
@@ -761,8 +761,8 @@ enum MenubarIconRecovery {
         Auto-Fix needs macOS permission to edit the StatusKit approval file \
         in your Group Containers folder.
 
-        Enable oMLX in System Settings > Privacy & Security > Full Disk \
-        Access, then run Auto-Fix again. You can also turn oMLX back on \
+        Enable oMLX Lite in System Settings > Privacy & Security > Full Disk \
+        Access, then run Auto-Fix again. You can also turn oMLX Lite back on \
         yourself in System Settings > Menu Bar.
         """
         alert.addButton(withTitle: "Open Full Disk Access")

@@ -1148,8 +1148,8 @@
                                         <div class="flex items-start justify-between gap-3">
                                             <div class="min-w-0">
                                                 <span class="text-sm font-medium text-neutral-700">SSD cache</span>
-                                                <p class="text-xs text-neutral-500 mt-0.5">L2 spill of evicted L1 entries to disk. Uses the oMLX paged SSD cache directory (<code>dflash_l2/</code>).</p>
-                                                <p x-show="!modelSettings.dflash_ssd_cache_available" class="text-xs text-amber-600 mt-1">Enable oMLX paged SSD cache first (<code>--paged-ssd-cache-dir</code>).</p>
+                                                <p class="text-xs text-neutral-500 mt-0.5">L2 spill of evicted L1 entries to disk. Uses the oMLX Lite paged SSD cache directory (<code>dflash_l2/</code>).</p>
+                                                <p x-show="!modelSettings.dflash_ssd_cache_available" class="text-xs text-amber-600 mt-1">Enable oMLX Lite paged SSD cache first (<code>--paged-ssd-cache-dir</code>).</p>
                                                 <p x-show="modelSettings.dflash_ssd_cache_available && !modelSettings.dflash_in_memory_cache" class="text-xs text-amber-600 mt-1">Requires in-memory cache to be enabled.</p>
                                             </div>
                                             <button type="button"

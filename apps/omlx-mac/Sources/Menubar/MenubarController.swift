@@ -114,7 +114,7 @@ final class MenubarController: NSObject {
         let menubarIconSize = NSSize(width: 18, height: 18)
         let fallback = NSImage(
             systemSymbolName: "cube.transparent",
-            accessibilityDescription: "oMLX"
+            accessibilityDescription: "oMLX Lite"
         )
 
         let outline = NSImage(named: "MenubarOutline") ?? fallback
@@ -132,8 +132,8 @@ final class MenubarController: NSObject {
         statusItem.behavior = []
         statusItem.menu = menu
         statusItem.button?.image = outline
-        statusItem.button?.setAccessibilityLabel("oMLX")
-        statusItem.button?.toolTip = "oMLX"
+        statusItem.button?.setAccessibilityLabel("oMLX Lite")
+        statusItem.button?.toolTip = "oMLX Lite"
         // This menu is state-driven by refreshMenuState(). If AppKit's
         // automatic target/action enabling stays on, stopped-server items
         // such as Web Dashboard and Chat can be re-enabled while opening.
@@ -266,7 +266,7 @@ final class MenubarController: NSObject {
         menu.addItem(webAdminItem)
 
         chatItem = item(String(localized: "menubar.item.chat",
-                               defaultValue: "Chat with oMLX",
+                               defaultValue: "Chat with oMLX Lite",
                                comment: "Menubar item that opens the browser-based chat dashboard"),
                         action: #selector(openChat),
                         symbol: "message")
@@ -282,7 +282,7 @@ final class MenubarController: NSObject {
         menu.addItem(updateItem)
 
         let about = item(String(localized: "menubar.item.about",
-                                defaultValue: "About oMLX",
+                                defaultValue: "About oMLX Lite",
                                 comment: "Menubar item that opens the standard About window"),
                          action: #selector(showAbout),
                          symbol: "info.circle")
@@ -291,7 +291,7 @@ final class MenubarController: NSObject {
         menu.addItem(.separator())
 
         let quit = item(String(localized: "menubar.item.quit",
-                               defaultValue: "Quit oMLX",
+                               defaultValue: "Quit oMLX Lite",
                                comment: "Menubar item that terminates the app (Cmd-Q)"),
                         action: #selector(quitApp),
                         symbol: "power",
@@ -378,7 +378,7 @@ final class MenubarController: NSObject {
             updateItem.isHidden = false
             updateItem.isEnabled = info.dmgURL != nil
             updateItem.title = String(localized: "menubar.item.install_update_version",
-                                      defaultValue: "Install oMLX \(info.version)…",
+                                      defaultValue: "Install oMLX Lite \(info.version)…",
                                       comment: "Menubar update item when an app update is available; placeholder is the version")
         case .downloading(let pct):
             updateItem.isHidden = false
@@ -405,7 +405,7 @@ final class MenubarController: NSObject {
             }
             return (
                 String(localized: "menubar.header.stopped",
-                       defaultValue: "oMLX stopped",
+                       defaultValue: "oMLX Lite stopped",
                        comment: "Menubar status header when the server is stopped"),
                 .secondaryLabelColor
             )
@@ -700,8 +700,8 @@ final class MenubarController: NSObject {
         newStatusItem.behavior = []
         newStatusItem.isVisible = true
         newStatusItem.menu = menu
-        newStatusItem.button?.setAccessibilityLabel("oMLX")
-        newStatusItem.button?.toolTip = "oMLX"
+        newStatusItem.button?.setAccessibilityLabel("oMLX Lite")
+        newStatusItem.button?.toolTip = "oMLX Lite"
         statusItem = newStatusItem
         refreshMenuState()
         return newStatusItem
@@ -812,7 +812,7 @@ final class MenubarController: NSObject {
                     comment: "Substring used when the conflicting process PID couldn't be determined")
         alert.informativeText = conflict.isOMLX
             ? String(localized: "menubar.alert.port_in_use.omlx",
-                     defaultValue: "Another oMLX server is already running on this port (\(pidStr)). Stop it before starting a new instance, or change the port in Settings.",
+                     defaultValue: "Another oMLX Lite server is already running on this port (\(pidStr)). Stop it before starting a new instance, or change the port in Settings.",
                      comment: "Port-conflict alert body when the conflicting process is another oMLX instance")
             : String(localized: "menubar.alert.port_in_use.other",
                      defaultValue: "Another process (\(pidStr)) is listening on port \(String(port)). Choose a different port in Settings or terminate that process.",
@@ -853,7 +853,7 @@ final class MenubarController: NSObject {
 
         let alert = NSAlert()
         alert.messageText = String(localized: "menubar.alert.server_failed.title",
-                                   defaultValue: "oMLX Server Failed to Start",
+                                   defaultValue: "oMLX Lite Server Failed to Start",
                                    comment: "Title for the server startup failure alert")
         alert.informativeText = parts.joined(separator: "\n\n")
         alert.addButton(withTitle: String(localized: "menubar.alert.open_log",
@@ -1310,7 +1310,7 @@ extension MenubarController {
             return nil
         }
         return String(localized: "menubar.alert.server_failed.access_hint",
-                      defaultValue: "Check that the configured model directory is mounted and readable. If it is on an external or protected location, grant oMLX access in macOS Privacy & Security settings.",
+                      defaultValue: "Check that the configured model directory is mounted and readable. If it is on an external or protected location, grant oMLX Lite access in macOS Privacy & Security settings.",
                       comment: "Hint shown when the server failure log suggests a model directory permission problem")
     }
 

@@ -13,7 +13,7 @@
             <div>
                 <h2 class="text-2xl font-bold tracking-tight text-neutral-900">Your Macs, one computer</h2>
                 <p class="text-sm text-neutral-500 mt-2 max-w-2xl">
-                    oMLX finds other Macs on your network by itself. Pair them with one
+                    oMLX Lite finds other Macs on your network by itself. Pair them with one
                     code and models split across the whole pool automatically.
                 </p>
             </div>
@@ -102,7 +102,7 @@
                     <div class="font-semibold">Can't reach the cluster service on this Mac</div>
                     <div class="text-xs text-red-700 mt-1">
                         The discovery backend did not answer. Confirm distributed inference is
-                        enabled, then restart oMLX and try again.
+                        enabled, then restart oMLX Lite and try again.
                     </div>
                     <div class="text-[11px] font-mono text-red-700 mt-2 break-all" x-text="devicesError"></div>
                     <div class="flex flex-wrap gap-2 mt-3">
@@ -147,17 +147,17 @@
                 </div>
                 <h3 class="text-lg font-semibold text-neutral-900 mt-4">Set up this Mac first</h3>
                 <p class="text-sm text-neutral-500 mt-2">
-                    This Mac hasn't introduced itself to the network yet. oMLX does that by itself
+                    This Mac hasn't introduced itself to the network yet. oMLX Lite does that by itself
                     once distributed inference is on — then a second Mac is all you add.
                 </p>
                 <ol class="text-left text-sm text-neutral-700 space-y-3 mt-6">
                     <li class="flex items-start gap-3">
                         <span class="w-5 h-5 rounded-full bg-neutral-900 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">1</span>
-                        <span>Open <span class="font-semibold">Settings → Advanced</span> and enable <span class="font-semibold">Distributed Inference</span>, then restart oMLX.</span>
+                        <span>Open <span class="font-semibold">Settings → Advanced</span> and enable <span class="font-semibold">Distributed Inference</span>, then restart oMLX Lite.</span>
                     </li>
                     <li class="flex items-start gap-3">
                         <span class="w-5 h-5 rounded-full bg-neutral-900 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">2</span>
-                        <span>On your other Mac, install oMLX with one line:</span>
+                        <span>On your other Mac, install oMLX Lite with one line:</span>
                     </li>
                 </ol>
                 <div class="mt-3 flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2">
@@ -170,7 +170,7 @@
                 </div>
                 <p class="text-xs text-neutral-400 mt-3">
                     Or download the app from Releases and drag it to Applications — same result.
-                    Once both Macs run oMLX, they find each other here automatically.
+                    Once both Macs run oMLX Lite, they find each other here automatically.
                 </p>
                 <div class="mt-5 border-t border-neutral-100 pt-4 text-left" data-cluster-v2-manual-add>
                     <div class="text-[11px] font-semibold text-neutral-600">Add by IP</div>
@@ -217,8 +217,8 @@
                     <span x-show="!selfDevice()">Still introducing this Mac to the network.</span>
                 </p>
                 <p class="text-xs text-neutral-400 mt-4">
-                    Nothing showing up? Make sure the other Mac runs oMLX with Distributed
-                    Inference enabled, and that macOS allowed oMLX under
+                    Nothing showing up? Make sure the other Mac runs oMLX Lite with Distributed
+                    Inference enabled, and that macOS allowed oMLX Lite under
                     <span class="font-medium">System Settings → Privacy &amp; Security → Local Network</span>.
                 </p>
                 <div class="mt-5 border-t border-neutral-100 pt-4" data-cluster-v2-manual-add>
@@ -357,7 +357,7 @@
                 <div class="min-w-0">
                     <div class="text-xs font-semibold text-neutral-900">Ready when you are</div>
                     <div class="text-[10px] text-neutral-500 mt-0.5">
-                        oMLX will verify the connection, versions and RDMA before splitting anything.
+                        oMLX Lite will verify the connection, versions and RDMA before splitting anything.
                     </div>
                 </div>
                 <button type="button" @click="startChecks()"
@@ -489,7 +489,7 @@
                             <li class="flex items-start gap-2.5">
                                 <span class="w-5 h-5 rounded-full bg-neutral-900 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">1</span>
                                 <span>On <span class="font-semibold" x-text="deviceName(pairing.target)"></span>,
-                                    open its oMLX dashboard and press <span class="font-semibold">Show code instead</span>
+                                    open its oMLX Lite dashboard and press <span class="font-semibold">Show code instead</span>
                                     on this Mac's card — it shows a 6-digit code.</span>
                             </li>
                             <li class="flex items-start gap-2.5">
@@ -538,7 +538,7 @@
                     <div>
                         <div class="text-xs font-bold uppercase tracking-wider text-neutral-400">Automatic checks</div>
                         <p class="text-xs text-neutral-500 mt-1">
-                            Everything oMLX needs before it splits a model. Rows fix themselves
+                            Everything oMLX Lite needs before it splits a model. Rows fix themselves
                             when the underlying condition does.
                         </p>
                     </div>
@@ -617,7 +617,7 @@
             <div class="p-5 sm:p-6">
                 <div class="text-xs font-bold uppercase tracking-wider text-neutral-400">Split a model across the pool</div>
                 <p class="text-xs text-neutral-500 mt-1">
-                    Pick a downloaded model. oMLX measures it and gives each Mac a contiguous
+                    Pick a downloaded model. oMLX Lite measures it and gives each Mac a contiguous
                     slice of its layers — heavier slices go to bigger Macs.
                 </p>
 
@@ -943,7 +943,7 @@
                                 <div class="text-xs font-semibold text-neutral-900">Exactly this split will launch</div>
                                 <div class="text-[10px] text-neutral-500 mt-0.5">
                                     Activation is signed against what you see — if anything changes,
-                                    oMLX rebuilds the plan instead of launching the wrong one.
+                                    oMLX Lite rebuilds the plan instead of launching the wrong one.
                                 </div>
                             </div>
                             <button type="button" @click="activatePlan()"
@@ -1156,7 +1156,7 @@
                          data-cluster-v2-membership-panel>
                         <div class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs text-blue-900">
                             <span class="font-semibold">On the new Mac:</span>
-                            open oMLX → Cluster, choose Add by IP, and enter
+                            open oMLX Lite → Cluster, choose Add by IP, and enter
                             <code class="font-mono" x-text="coordinatorAddrFor(selfDevice()) || 'this Mac’s address'"></code>.
                             It shows a six-digit code; approve that request below. Pairing does not interrupt the running model.
                         </div>
@@ -1352,7 +1352,7 @@
                         <div>
                             <div class="text-xs font-semibold text-amber-900">Unload these shards and choose a new model?</div>
                             <div class="text-[10px] text-amber-800 mt-0.5">
-                                oMLX waits for active requests, verifies both ranks stopped, keeps the Macs paired, then reopens the existing model picker with this profile, cache policy, memory roles and context reservation prefilled.
+                                oMLX Lite waits for active requests, verifies both ranks stopped, keeps the Macs paired, then reopens the existing model picker with this profile, cache policy, memory roles and context reservation prefilled.
                             </div>
                         </div>
                         <div class="flex items-center gap-2 flex-shrink-0">

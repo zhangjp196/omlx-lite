@@ -1,4 +1,4 @@
-# oMLX macOS App Packaging
+# oMLX Lite macOS App Packaging
 
 Produces the venvstacks Python layers that the Swift macOS bundle
 embeds. Building the user-facing `.app` itself is owned by
@@ -58,9 +58,9 @@ No application layer — the Swift app is the application surface.
 ## Installation
 
 The Swift build (`build.sh release`) produces
-`apps/omlx-mac/build/Stage/oMLX.app` directly — no DMG step. To install:
+`apps/omlx-mac/build/Stage/oMLX Lite.app` directly — no DMG step. To install:
 
-1. Drag `apps/omlx-mac/build/Stage/oMLX.app` to `/Applications`, or
+1. Drag `apps/omlx-mac/build/Stage/oMLX Lite.app` to `/Applications`, or
    `open` it in-place to launch from `apps/omlx-mac/build/Stage/`.
 2. Launch the app (appears in the menubar).
 3. Walk through the first-run wizard (Storage + API key), then Start

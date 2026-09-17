@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# build.sh — produce a runnable oMlx lite.app for local manual testing.
+# build.sh — produce a runnable oMLX Lite.app for local manual testing.
 #
-# Side-by-side Swift bundle path: this builds `oMlx lite.app` alongside the
-# legacy Python/PyObjC `oMlx lite.app` until the Swift app becomes the primary
+# Side-by-side Swift bundle path: this builds `oMLX Lite.app` alongside the
+# legacy Python/PyObjC `oMLX Lite.app` until the Swift app becomes the primary
 # release channel.
 # Pipeline:
 #   1. xcodebuild with `-resolvePackageDependencies` so SPM deps pick up
@@ -19,13 +19,13 @@
 # fingerprint check trigger a fresh venvstacks rebuild.
 #
 # Donor source resolution (in order):
-#   1. $OMLX_DONOR_APP — explicit override (e.g. /Applications/oMlx lite.app).
+#   1. $OMLX_DONOR_APP — explicit override (e.g. /Applications/oMLX Lite.app).
 #                        Bypasses venvstacks rebuild; uses the override as-is.
 #   2. packaging/_export/ — the venvstacks export tree. Default for dev
 #                           builds. Rebuilt automatically when stale
 #                           (fingerprint of pyproject.toml + venvstacks.toml
 #                           + uv.lock differs from packaging/_export/.fingerprint).
-#   3. /Applications/oMlx lite.app — last-resort fallback when --no-rebuild-donor
+#   3. /Applications/oMLX Lite.app — last-resort fallback when --no-rebuild-donor
 #                               is set and no local export exists.
 #
 # Usage:
@@ -45,7 +45,7 @@
 #                                                       existing donor even if stale
 #
 # Env overrides:
-#   OMLX_DONOR_APP=/path/to/oMlx lite.app    # explicit donor (bypasses venvstacks)
+#   OMLX_DONOR_APP=/path/to/oMLX Lite.app    # explicit donor (bypasses venvstacks)
 #   OMLX_EXPORT_DIR=/path/to/_export    # override the venvstacks export tree
 #                                       (release builds set this per macOS target)
 #   OMLX_NEXT_OUT=/path/to/output_dir   # final stage location
@@ -121,9 +121,9 @@ CUSTOM_KERNEL_ABI_CHECKER="$SCRIPT_DIR/check_custom_kernel_python_abi.py"
 LOCAL_EXPORT="${OMLX_EXPORT_DIR:-$PACKAGING_DIR/_export}"
 
 # OMLX_DONOR_APP is "explicit" only when the user set it; the default
-# (/Applications/oMlx lite.app) is treated as a fallback, not an override.
+# (/Applications/oMLX Lite.app) is treated as a fallback, not an override.
 OMLX_DONOR_APP_SET="${OMLX_DONOR_APP+1}"
-OMLX_DONOR_APP="${OMLX_DONOR_APP:-/Applications/oMlx lite.app}"
+OMLX_DONOR_APP="${OMLX_DONOR_APP:-/Applications/oMLX Lite.app}"
 OUTPUT_DIR="${OMLX_NEXT_OUT:-$PROJECT_DIR/build/Stage}"
 BUILD_DIR="$PROJECT_DIR/build"
 
@@ -539,14 +539,14 @@ xcodebuild \
     build >"$BUILD_DIR/xcodebuild.log" 2>&1 \
         || { tail -40 "$BUILD_DIR/xcodebuild.log" >&2; die "xcodebuild failed; full log: $BUILD_DIR/xcodebuild.log"; }
 
-XCODE_APP="$BUILD_DIR/Build/Products/$CONFIG/oMlx lite.app"
+XCODE_APP="$BUILD_DIR/Build/Products/$CONFIG/oMLX Lite.app"
 [ -d "$XCODE_APP" ] || die "Expected $XCODE_APP — check build log."
 ok "Built $XCODE_APP"
 
 # --- Stage --------------------------------------------------------------
 
 mkdir -p "$OUTPUT_DIR"
-STAGED_APP="$OUTPUT_DIR/oMlx lite.app"
+STAGED_APP="$OUTPUT_DIR/oMLX Lite.app"
 
 log "Staging bundle at $STAGED_APP"
 rm -rf "$STAGED_APP"

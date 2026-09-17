@@ -6,7 +6,7 @@ Date: 2026-08-10
 
 ## Decision
 
-oMLX should support one model sharded across a mixed pool of Apple Silicon and
+oMLX Lite should support one model sharded across a mixed pool of Apple Silicon and
 NVIDIA CUDA nodes. The Mac runs MLX on Metal, the DGX Spark runs MLX on CUDA,
 and the deployment exposes one logical model pipeline. Ordinary workers join a
 common MLX TCP Ring. A verified group of CUDA workers may instead sit behind
@@ -18,7 +18,7 @@ This is the primary heterogeneous architecture. Prefill/decode disaggregation
 is an optional optimization for spare capacity, not the mechanism that creates
 the large pool.
 
-The first implementation should extend the current oMLX unequal pipeline:
+The first implementation should extend the current oMLX Lite unequal pipeline:
 
 1. discover Metal and CUDA nodes;
 2. verify that they have compatible MLX, MLX-LM, model, tokenizer, and cache
@@ -35,7 +35,7 @@ packaging assumptions around them must be generalized.
 ## What “one unified pool” means
 
 The machines do not become hardware-coherent unified memory. Each machine keeps
-its own physical memory, and oMLX presents a **logical model pool** by placing a
+its own physical memory, and oMLX Lite presents a **logical model pool** by placing a
 different part of the model in each rank's local memory.
 
 ```text
@@ -59,7 +59,7 @@ some fixed model weights may be replicated. The dashboard should therefore
 show all three values:
 
 - installed aggregate memory;
-- aggregate memory admitted to oMLX; and
+- aggregate memory admitted to oMLX Lite; and
 - the planner's actual maximum model working set.
 
 That last value is the honest answer to “what size model can this pool load?”
@@ -78,7 +78,7 @@ contiguous-layer and physical-memory checks may adjust or refuse.
 
 This design no longer depends on treating CUDA support as an unofficial MLX
 experiment. [MLX 0.32.2 officially supports CUDA 12 and CUDA 13](https://ml-explore.github.io/mlx/build/html/install.html),
-including Linux ARM wheels relevant to DGX Spark. oMLX already pins
+including Linux ARM wheels relevant to DGX Spark. oMLX Lite already pins
 `mlx==0.32.2` in this branch.
 
 MLX provides several distributed transports:
@@ -102,7 +102,7 @@ Exo is useful corroborating evidence. Its current placement code represents
 instance, and its CUDA/DGX packaging landed in
 [`93a2474`](https://github.com/exo-explore/exo/commit/93a24748e60f356d472859c7da991dfadd2d8107).
 The supplied screenshot is evidence that mixed hardware can be assembled, but
-it is not a reproducible correctness or performance result. oMLX still needs a
+it is not a reproducible correctness or performance result. oMLX Lite still needs a
 hardware gate for the exact model and topology it advertises.
 
 ## The non-negotiable execution rule
@@ -154,7 +154,7 @@ placing both physical CUDA workers independently on the 10 GbE Ring.
 
 MLX supports initializing more than one distributed backend in one program,
 but its global rank environment and model sharding path do not automatically
-create this hierarchy. oMLX must add an explicit gateway runner with:
+create this hierarchy. oMLX Lite must add an explicit gateway runner with:
 
 - an outer Ring group containing the Macs and one gateway process;
 - an inner NCCL group containing both CUDA processes;
@@ -204,7 +204,7 @@ the operator to understand parallelism terminology.
 | Model fits on a faster subset | Use the fastest measured subset with safe headroom |
 | Model fits in separate prefill and decode pools | Benchmark optional disaggregation and use it only when end-to-end performance improves |
 | Mac-only high-speed mesh wins | Use JACCL with the Mac subset |
-| CUDA-only group wins | Use NCCL with the CUDA subset once supported by oMLX |
+| CUDA-only group wins | Use NCCL with the CUDA subset once supported by oMLX Lite |
 | A node is incompatible or makes the plan slower | Leave it available but out of this deployment |
 
 An explicit **Use all eligible memory** control can force a capacity-oriented
@@ -217,7 +217,7 @@ still using enough nodes to fit the model safely.
 OpenAI client
     |
     v
-oMLX coordinator on any elected node
+oMLX Lite coordinator on any elected node
     |
     +-- discovery, trust, inventory, model catalogue
     +-- capability and link benchmarks
@@ -234,7 +234,7 @@ one heterogeneous logical deployment
     +-- ...
     |
     v
-normal oMLX streaming API response
+normal oMLX Lite streaming API response
 ```
 
 The control plane may run on the Mac for convenience, but rank zero is an
@@ -255,7 +255,7 @@ after thirty minutes.
 The generated command is intentionally not `curl | sudo`. It downloads a
 standalone standard-library bootstrap to a temporary file, verifies its
 SHA-256 digest from the admin-generated command, and only then runs it through
-`sudo`. The command separately pins the SHA-256 of the exact oMLX worker source
+`sudo`. The command separately pins the SHA-256 of the exact oMLX Lite worker source
 bundle and the coordinator's SSH public-key fingerprint. The bootstrap then:
 
 1. installs Python, Git, and OpenSSH prerequisites on Ubuntu/Debian;
@@ -270,16 +270,16 @@ bundle and the coordinator's SSH public-key fingerprint. The bootstrap then:
 6. adds the credential-free node record to the dashboard and active pool.
 
 Join keys and post-claim sessions exist only in coordinator memory. Restarting
-oMLX invalidates them. Completed records contain addresses, runtime path, and
+oMLX Lite invalidates them. Completed records contain addresses, runtime path, and
 public SSH fingerprint but no join key, session, password, or private key; the
 registry is written atomically with mode `0600`. Replayed, expired, revoked,
 identity-mutated, source-mismatched, or host-fingerprint-mismatched requests
 fail closed.
 
 The coordinator web port must be reachable from the CUDA LAN. Configure the
-main API key first, or save it together with the oMLX **Server host** set to
+main API key first, or save it together with the oMLX Lite **Server host** set to
 `0.0.0.0` in Settings. Then restart and enter the Studio's LAN address in the
-enrollment card. oMLX refuses a non-loopback bind until an API key is
+enrollment card. oMLX Lite refuses a non-loopback bind until an API key is
 configured. Plain HTTP is appropriate only on a trusted private LAN; use the
 dashboard's HTTPS origin
 when the network is not trusted. The one-time secret is present in the pasted
@@ -293,13 +293,13 @@ Bonjour suggestions remain untrusted until pairing succeeds.
 The onboarding sequence is:
 
 1. discover a node or enter its address manually;
-2. verify SSH host identity and complete oMLX pairing;
+2. verify SSH host identity and complete oMLX Lite pairing;
 3. collect OS, architecture, accelerator, memory, model inventory, and route
    facts;
 4. run a small accelerator and Ring compatibility probe;
 5. retain the node in the cluster inventory even when it is not selected for a
    particular model; and
-6. invalidate old approval if the SSH identity, oMLX build, MLX build, model
+6. invalidate old approval if the SSH identity, oMLX Lite build, MLX build, model
    manifest, or accelerator contract changes.
 
 Discovery failure must not make the feature unusable. Manual addresses and a
@@ -316,7 +316,7 @@ needs a platform-neutral contract containing at least:
 - machine architecture;
 - accelerator kind (`metal`, `cuda`, or `cpu`), device identity, and usable
   accelerator/system memory;
-- oMLX version and build digest;
+- oMLX Lite version and build digest;
 - Python ABI, MLX version and platform build fingerprint, and MLX-LM revision;
 - available distributed transports;
 - supported model operations, quantization formats, cache types, and wire
@@ -330,7 +330,7 @@ cross-rank parity probes, not identical binary hashes.
 
 Model support must be capability-gated. MLX CUDA 0.32 is broad, but a model
 using a Metal-only custom kernel or an operation missing from CUDA must be
-rejected before launch. oMLX's optional Metal custom kernels must never be
+rejected before launch. oMLX Lite's optional Metal custom kernels must never be
 imported as a required Linux worker dependency.
 
 ## Worker environment
@@ -341,7 +341,7 @@ headless Linux ARM64 environment using the official CUDA wheel set:
 ```text
 mlx[cuda13]==0.32.2
 same pinned MLX-LM revision
-same oMLX cluster/runtime code
+same oMLX Lite cluster/runtime code
 no macOS app, Metal-only extension, or Mac authorization dependency
 ```
 
@@ -474,7 +474,7 @@ accepted only when both ranks answer and the measured large-payload rate clears
 the configured floor.
 
 [`benchmarks/heterogeneous_pool_probe.py`](../benchmarks/heterogeneous_pool_probe.py)
-remains a developer and recovery diagnostic. It has no oMLX server dependency;
+remains a developer and recovery diagnostic. It has no oMLX Lite server dependency;
 ordinary setup must not require it or a hand-written hostfile.
 
 Run it locally on each node:
@@ -592,7 +592,7 @@ default, uses a raw TCP cache service, silently falls back to local prefill, and
 its public benchmark defaults to one node for each role. That is useful design
 evidence, but not the foundation of the requested memory pool.
 
-For oMLX, disaggregation should be considered only after the one-copy mixed
+For oMLX Lite, disaggregation should be considered only after the one-copy mixed
 pipeline works. Both role pools must fit the full model, the cache protocol must
 be authenticated and bounded, and measured transfer plus injection time must be
 lower than local prefill time.
@@ -621,7 +621,7 @@ The heterogeneous pool is ready for an experimental UI when:
 
 ## Bottom line
 
-The requested system is feasible and aligns with the current distributed oMLX
+The requested system is feasible and aligns with the current distributed oMLX Lite
 architecture. The key is one sharded model copy: a common MLX Ring for ordinary
 ranks, with verified NCCL/ConnectX composite stages where they reduce external
 traffic—not a KV handoff between replicas. Official MLX CUDA support removes

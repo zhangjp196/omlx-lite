@@ -1,6 +1,6 @@
-# Contributing to oMLX
+# Contributing to oMLX Lite
 
-Thank you for your interest in contributing to oMLX! This guide will help you get started.
+Thank you for your interest in contributing to oMLX Lite! This guide will help you get started.
 
 ## Getting Started
 
@@ -18,7 +18,7 @@ cd omlx
 pip install -e ".[dev]"
 ```
 
-> **Note**: oMLX requires Apple Silicon (M1/M2/M3/M4) and Python 3.10+.
+> **Note**: oMLX Lite requires Apple Silicon (M1/M2/M3/M4) and Python 3.10+.
 
 ## Development Workflow
 

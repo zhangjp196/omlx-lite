@@ -25,7 +25,7 @@ BUILD_DIR = SCRIPT_DIR / "_build"
 EXPORT_DIR = SCRIPT_DIR / "_export"
 DIST_DIR = SCRIPT_DIR / "dist"
 WHEELS_DIR = SCRIPT_DIR / "_wheels"
-APP_NAME = "oMLX"
+APP_NAME = "oMLX Lite"
 
 
 def _read_version() -> str:

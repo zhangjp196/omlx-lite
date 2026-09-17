@@ -71,7 +71,7 @@ final class WelcomeWindowController: NSObject, NSWindowDelegate {
             defer: false
         )
         win.title = String(localized: "welcome.window.title",
-                           defaultValue: "Welcome to oMLX",
+                           defaultValue: "Welcome to oMLX Lite",
                            comment: "Window title bar text for the Welcome wizard")
         win.titleVisibility = .hidden
         win.titlebarAppearsTransparent = true
@@ -348,7 +348,7 @@ final class WelcomeViewModel: ObservableObject {
             case .portConflict(let conflict):
                 lastError = conflict.isOMLX
                     ? String(localized: "welcome.error.port_in_use_omlx",
-                             defaultValue: "Port \(String(config.port)) is already in use (oMLX server already running).",
+                             defaultValue: "Port \(String(config.port)) is already in use (oMLX Lite server already running).",
                              comment: "Welcome wizard: bind() failed because another oMLX instance owns the port")
                     : String(localized: "welcome.error.port_in_use",
                              defaultValue: "Port \(String(config.port)) is already in use.",
@@ -478,7 +478,7 @@ private struct WelcomeIntroBody: View {
 
             VStack(spacing: 14) {
                 Text(String(localized: "welcome.header.title",
-                            defaultValue: "oMLX",
+                            defaultValue: "oMLX Lite",
                             comment: "Main heading shown on the Welcome wizard"))
                     .font(.omlxDisplay(48, weight: .semibold))
                     .foregroundStyle(WelcomeStyle.text)
@@ -552,7 +552,7 @@ private struct WelcomeSetupBody: View {
                                   defaultValue: "Local server",
                                   comment: "Title for the local server setup card"),
                     text: String(localized: "welcome.setup.local.body",
-                                 defaultValue: "oMLX binds to 127.0.0.1 on first run, so clients on this Mac can use it without exposing the server to your network.",
+                                 defaultValue: "oMLX Lite binds to 127.0.0.1 on first run, so clients on this Mac can use it without exposing the server to your network.",
                                  comment: "Body for the local server setup card")
                 )
 
@@ -687,7 +687,7 @@ private struct WelcomeCompleteBody: View {
                     .font(.omlxDisplay(30, weight: .semibold))
                     .foregroundStyle(WelcomeStyle.text)
                 Text(String(localized: "welcome.complete.description",
-                            defaultValue: "oMLX is running locally at http://127.0.0.1:\(vm.portText). Open the web dashboard to download your first model, manage settings, and connect your coding tools.",
+                            defaultValue: "oMLX Lite is running locally at http://127.0.0.1:\(vm.portText). Open the web dashboard to download your first model, manage settings, and connect your coding tools.",
                             comment: "Description on the Welcome completion page"))
                     .font(.omlxText(14))
                     .foregroundStyle(WelcomeStyle.muted)
@@ -845,7 +845,7 @@ private struct WelcomeIcon: View {
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
             .shadow(color: Color.black.opacity(0.10), radius: 12, y: 6)
-            .accessibilityLabel("oMLX")
+            .accessibilityLabel("oMLX Lite")
     }
 }
 

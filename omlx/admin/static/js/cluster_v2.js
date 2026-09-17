@@ -133,7 +133,7 @@ function clusterV2Wizard() {
         'cluster.v2.strategy.pipeline': 'Pipeline',
         'cluster.v2.strategy.recommended': 'Recommended',
         'cluster.v2.strategy.hint.auto':
-            'oMLX picks the split that fits this model and your link',
+            'oMLX Lite picks the split that fits this model and your link',
         'cluster.v2.strategy.hint.tensor':
             'Every Mac works on every token — needs a fast link',
         'cluster.v2.strategy.hint.pipeline':
@@ -977,7 +977,7 @@ function clusterV2Wizard() {
                     eyebrow: 'Cluster running',
                     label: 'Ready',
                     detail:
-                        'The distributed weights are resident and available through oMLX.',
+                        'The distributed weights are resident and available through oMLX Lite.',
                     tone: 'bg-green-50 border-green-200 text-green-700',
                     pulse: true,
                 };
@@ -988,7 +988,7 @@ function clusterV2Wizard() {
                     eyebrow: 'Starting cluster',
                     label: 'Loading',
                     detail:
-                        'oMLX is loading and validating the model across your Macs.',
+                        'oMLX Lite is loading and validating the model across your Macs.',
                     tone: 'bg-blue-50 border-blue-200 text-blue-700',
                     pulse: true,
                 };
@@ -1383,7 +1383,7 @@ function clusterV2Wizard() {
             } catch (error) {
                 if (error?.status === 404 || error?.status === 409) {
                     this.pairing.error =
-                        'No join request from this Mac yet. On the other Mac, open its oMLX dashboard and press Pair first — then type its code here.';
+                        'No join request from this Mac yet. On the other Mac, open its oMLX Lite dashboard and press Pair first — then type its code here.';
                 } else if (error?.status === 403 || error?.status === 429) {
                     this.pairing.error =
                         error.message ||
@@ -1620,7 +1620,7 @@ function clusterV2Wizard() {
                 } else {
                     this.notify(
                         'warning',
-                        'No oMLX node answered at that address yet — it stays on the list while we keep trying.',
+                        'No oMLX Lite node answered at that address yet — it stays on the list while we keep trying.',
                     );
                 }
                 this.manualAddr = '';
@@ -1817,7 +1817,7 @@ function clusterV2Wizard() {
                 const mismatches = this.versionMismatches();
                 rows.push({
                     key: 'version',
-                    label: 'Matching oMLX versions',
+                    label: 'Matching oMLX Lite versions',
                     status: mismatches.length ? 'fail' : 'pass',
                     detail: mismatches.length
                         ? mismatches
@@ -1827,7 +1827,7 @@ function clusterV2Wizard() {
                               )
                               .join(' ')
                         : 'Every Mac runs the same build.',
-                    fix: 'Update the older Mac to the same oMLX build. App: it auto-updates. Brew: brew upgrade omlx. Source: pull the same commit on both Macs.',
+                    fix: 'Update the older Mac to the same oMLX Lite build. App: it auto-updates. Brew: brew upgrade omlx. Source: pull the same commit on both Macs.',
                 });
             }
 
@@ -1908,7 +1908,7 @@ function clusterV2Wizard() {
                 let status = 'pending';
                 let detail = 'Checks whether discovery beacons are arriving.';
                 let fix =
-                    'macOS is blocking local-network beacons. System Settings → Privacy & Security → Local Network → allow oMLX, then restart oMLX. Pairing still works via Add by IP while this is amber.';
+                    'macOS is blocking local-network beacons. System Settings → Privacy & Security → Local Network → allow oMLX Lite, then restart oMLX Lite. Pairing still works via Add by IP while this is amber.';
                 if (health) {
                     if (health.multicast_rx_within_5s) {
                         status = 'pass';
@@ -3610,7 +3610,7 @@ function clusterV2Wizard() {
             const controllerIp = this.cudaJoinSuggestedIp();
             if (!controllerIp) {
                 this.cudaJoin.error =
-                    'Enter this oMLX Mac’s LAN IPv4 address first.';
+                    'Enter this oMLX Lite Mac’s LAN IPv4 address first.';
                 return;
             }
             this.cudaJoin.controllerIp = controllerIp;

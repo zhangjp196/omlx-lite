@@ -221,7 +221,7 @@ final class ServerProcess: @unchecked Sendable {
                 isOMLX: resolver.isOMLXOnPortSync()
             )
             update(.failed(message: "Port \(port) in use" +
-                           (conflict.isOMLX ? " (oMLX server already running)" : "")))
+                           (conflict.isOMLX ? " (oMLX Lite server already running)" : "")))
             postPortConflict(conflict)
             return .portConflict(conflict)
         }

@@ -4,7 +4,7 @@ Date: 2026-07-28
 
 ## Overview
 
-DFlash is a block diffusion speculative decoding technique (arXiv:2602.06036) that accelerates LLM token generation by having a small draft model propose multiple tokens simultaneously, which the target model verifies in a single forward pass. The MLX implementation ([bstnxbt/dflash-mlx](https://github.com/bstnxbt/dflash-mlx)) has been integrated into oMLX as an experimental engine option.
+DFlash is a block diffusion speculative decoding technique (arXiv:2602.06036) that accelerates LLM token generation by having a small draft model propose multiple tokens simultaneously, which the target model verifies in a single forward pass. The MLX implementation ([bstnxbt/dflash-mlx](https://github.com/bstnxbt/dflash-mlx)) has been integrated into oMLX Lite as an experimental engine option.
 
 ---
 
@@ -23,7 +23,7 @@ DFlash is a block diffusion speculative decoding technique (arXiv:2602.06036) th
 
 Key distinction from traditional speculative decoding: the draft model uses **block diffusion** (parallel denoising) rather than autoregressive token-by-token drafting, allowing all 16 tokens to be proposed simultaneously.
 
-### oMLX integration
+### oMLX Lite integration
 
 ```
 API Request → server.py → engine_pool.py
@@ -73,7 +73,7 @@ DFlashEngine is a `BaseEngine` implementation that:
 
 ### Supported models
 
-DFlash registers `QwenGdnTargetOps`, `Gemma4TargetOps`, and `MuseGlimmerTargetOps`. oMLX also registers a Laguna backend and the `DFlashLagunaForCausalLM` drafter used by Poolside's official checkpoints:
+DFlash registers `QwenGdnTargetOps`, `Gemma4TargetOps`, and `MuseGlimmerTargetOps`. oMLX Lite also registers a Laguna backend and the `DFlashLagunaForCausalLM` drafter used by Poolside's official checkpoints:
 
 | Target model | Draft checkpoint |
 |--------------|-----------------|
@@ -108,7 +108,7 @@ metadata, and shows the warning in the dashboard together with acceptance and
 separate accepted-draft/output tokens-per-cycle counters. A generic `-DFlash`
 suffix is not treated as proof of a BF16-only draft. Poolside also publishes
 INT4/FP8 drafters; their vLLM-format
-targets are not yet validated in oMLX. The adapter validates target
+targets are not yet validated in oMLX Lite. The adapter validates target
 depth, hidden size, and capture-layer IDs at load time. It implements Laguna's
 per-head/per-element softplus attention gating, partial RoPE,
 per-captured-layer RMS normalization, Poolside's fused `qkv_proj` checkpoint
@@ -231,7 +231,7 @@ DFlashEngine loads both target and draft models simultaneously:
 DFlashEngine does not use omlx's paged KV block cache. It has a separate
 dflash-mlx snapshot cache: optional L1 memory entries and L2 SSD spill.
 
-When context fallback is configured, the batched engine provides oMLX's paged
+When context fallback is configured, the batched engine provides oMLX Lite's paged
 and SSD block cache after the switch.
 
 ### 6. No batch benchmark

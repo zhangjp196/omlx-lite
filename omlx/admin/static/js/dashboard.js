@@ -3166,7 +3166,7 @@
                 const rpad = (s, w) => s.toString().padEnd(w);
                 let lines = [];
 
-                lines.push('oMLX - LLM inference, optimized for your Mac');
+                lines.push('oMLX Lite - LLM inference, optimized for your Mac');
                 lines.push('https://github.com/jundot/omlx');
                 if (this.benchRunExternal) {
                     lines.push(`Benchmark Model: ${this.benchRunExternal.model} @ ${this.benchRunExternal.base_url}`);

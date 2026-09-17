@@ -94,7 +94,7 @@ def serve_command(args):
         build_number = None
 
     # Print version banner
-    print(f"\033[33moMLX - LLM inference, optimized for your Mac\033[0m")
+    print(f"\033[33moMLX Lite - LLM inference, optimized for your Mac\033[0m")
     print(f"\033[33m├─ https://github.com/jundot/omlx\033[0m")
     if build_number:
         print(f"\033[33m├─ Version: {__version__}\033[0m")
@@ -296,7 +296,7 @@ def serve_command(args):
 
         if args.no_cache:
             print(
-                "Mode: Multi-model serving (no oMLX cache, mlx-lm BatchGenerator only)"
+                "Mode: Multi-model serving (no oMLX Lite cache, mlx-lm BatchGenerator only)"
             )
         elif paged_ssd_cache_dir:
             print("Mode: Multi-model serving (continuous batching + paged SSD cache)")
@@ -362,7 +362,7 @@ def _app_bundle_path():
     try:
         return cli_path.parents[2]
     except IndexError:
-        return Path("/Applications/oMLX.app")
+        return Path("/Applications/oMLX Lite.app")
 
 
 def _open_macos_app() -> None:
@@ -410,7 +410,7 @@ def _send_app_control_with_launch(command: str, timeout: float) -> dict:
         except OSError as exc:
             last_error = exc
             time.sleep(0.2)
-    raise RuntimeError(f"Could not reach oMLX.app control socket: {last_error}")
+    raise RuntimeError(f"Could not reach oMLX Lite.app control socket: {last_error}")
 
 
 def _wait_app_control_state(states: set[str], timeout: float) -> dict:
@@ -452,34 +452,34 @@ def lifecycle_command(args) -> int:
                 try:
                     response = _send_app_control(command)
                 except OSError:
-                    print("oMLX stopped")
+                    print("oMLX Lite stopped")
                     return 0
             else:
                 response = _send_app_control_with_launch(command, timeout=timeout)
             if not response.get("ok"):
-                print(response.get("message") or f"oMLX {command} failed")
+                print(response.get("message") or f"oMLX Lite {command} failed")
                 return 1
 
             if command in {"start", "restart"} and not no_wait:
                 response = _wait_app_control_state({"running", "unresponsive"}, timeout)
                 if response.get("state") not in {"running", "unresponsive"}:
                     print(
-                        f"oMLX server is {response.get('state', 'unknown')} "
+                        f"oMLX Lite server is {response.get('state', 'unknown')} "
                         f"after {int(timeout)}s."
                     )
                     return 1
 
             if command == "stop":
-                print("oMLX stopped")
+                print("oMLX Lite stopped")
             elif command == "start":
                 print(
-                    f"oMLX server {response.get('state')} on port {response.get('port')}"
+                    f"oMLX Lite server {response.get('state')} on port {response.get('port')}"
                 )
             elif command == "restart":
-                print(f"oMLX server restarted on port {response.get('port')}")
+                print(f"oMLX Lite server restarted on port {response.get('port')}")
             return 0
         except Exception as exc:
-            print(f"Failed to control oMLX.app: {exc}")
+            print(f"Failed to control oMLX Lite.app: {exc}")
             return 1
 
     if is_homebrew():
@@ -506,14 +506,14 @@ def diagnose_menubar() -> int:
     import subprocess
     from pathlib import Path
 
-    print("oMLX menubar diagnostics")
+    print("oMLX Lite menubar diagnostics")
     print("=" * 40)
 
     mac_ver = platform.mac_ver()[0] or "unknown"
     print(f"macOS:          {mac_ver}")
     print(f"Bundle ID:      app.omlx")
 
-    app_path = Path("/Applications/oMLX.app")
+    app_path = Path("/Applications/oMLX Lite.app")
     print(f"App installed:  {'yes' if app_path.exists() else 'NO (install DMG first)'}")
 
     try:
@@ -573,12 +573,12 @@ def diagnose_menubar() -> int:
 
     print()
     print("If the icon is missing on macOS Tahoe (26.x):")
-    print("  1. In the oMLX app: Settings > Appearance > Menu Bar Icon > Restore")
+    print("  1. In the oMLX Lite app: Settings > Appearance > Menu Bar Icon > Restore")
     print("  2. Or turn it back on in System Settings > Menu Bar")
     print(
         "     open 'x-apple.systempreferences:com.apple.ControlCenter-Settings.extension?MenuBar'"
     )
-    print("  3. If oMLX isn't in the list, quit the app and relaunch oMLX.app")
+    print("  3. If oMLX Lite isn't in the list, quit the app and relaunch oMLX Lite.app")
     print()
     print("Note: Restore edits ControlCenter's own StatusKit approval, which")
     print("needs Full Disk Access. Without it, use the System Settings toggle.")
@@ -625,7 +625,7 @@ def cluster_command(args) -> int:
         if args.json:
             print(json.dumps(result, indent=2, sort_keys=True))
         else:
-            print("oMLX cluster worker smoke passed")
+            print("oMLX Lite cluster worker smoke passed")
             print(f"Worker PID:  {result['worker_pid']}")
             print(f"Protocol:    {result['protocol_version']}")
             print(f"Round trip:  {result['elapsed_seconds']:.3f}s")
@@ -645,7 +645,7 @@ def cluster_command(args) -> int:
         if args.json:
             print(json.dumps(result, indent=2, sort_keys=True))
         else:
-            print("oMLX local MLX collective smoke passed")
+            print("oMLX Lite local MLX collective smoke passed")
             print(f"Backend:     {result['backend']} (loopback only)")
             print(f"Ranks:       {result['rank_count']}")
             print(f"All-sum:     {result['expected_sum']}")
@@ -667,7 +667,7 @@ def cluster_command(args) -> int:
         if args.json:
             print(json.dumps(result, indent=2, sort_keys=True))
         else:
-            print("oMLX unequal Nemotron-H pipeline smoke passed")
+            print("oMLX Lite unequal Nemotron-H pipeline smoke passed")
             print(f"Backend:     {result['backend']} (loopback only)")
             print(f"Ranks:       {result['rank_count']}")
             print(f"Checksum:    {result['ranks'][0]['checksum']}")
@@ -774,14 +774,14 @@ Examples:
         "--version",
         action="version",
         version=__version__,
-        help="Print the oMLX version and exit",
+        help="Print the oMLX Lite version and exit",
     )
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
     for name, help_text in (
-        ("start", "Start oMLX as a managed background server"),
-        ("stop", "Stop the managed background oMLX server"),
-        ("restart", "Restart the managed background oMLX server"),
+        ("start", "Start oMLX Lite as a managed background server"),
+        ("stop", "Stop the managed background oMLX Lite server"),
+        ("restart", "Restart the managed background oMLX Lite server"),
     ):
         lifecycle_parser = subparsers.add_parser(
             name,
@@ -883,7 +883,7 @@ Example directory structure:
         type=str,
         choices=["off", "safe", "balanced", "aggressive"],
         default=None,
-        help="Memory guard tier, or 'off' to disable the guard. safe reserves more system memory; aggressive allows more oMLX memory use. Passing a tier also turns the guard on. (default: balanced)",
+        help="Memory guard tier, or 'off' to disable the guard. safe reserves more system memory; aggressive allows more oMLX Lite memory use. Passing a tier also turns the guard on. (default: balanced)",
     )
     serve_parser.add_argument(
         "--memory-guard-gb",
@@ -897,7 +897,7 @@ Example directory structure:
         "--paged-ssd-cache-dir",
         type=str,
         default=None,
-        help="Directory for paged SSD cache storage (enables oMLX prefix cache)",
+        help="Directory for paged SSD cache storage (enables oMLX Lite prefix cache)",
     )
     serve_parser.add_argument(
         "--paged-ssd-cache-max-size",
@@ -921,7 +921,7 @@ Example directory structure:
     serve_parser.add_argument(
         "--no-cache",
         action="store_true",
-        help="Disable oMLX paged SSD cache. mlx-lm BatchGenerator still manages KV states internally.",
+        help="Disable oMLX Lite paged SSD cache. mlx-lm BatchGenerator still manages KV states internally.",
     )
     serve_parser.add_argument(
         "--initial-cache-blocks",
@@ -959,7 +959,7 @@ Example directory structure:
         "--base-path",
         type=str,
         default=None,
-        help="Base directory for oMLX data (default: ~/.omlx)",
+        help="Base directory for oMLX Lite data (default: ~/.omlx)",
     )
     serve_parser.add_argument(
         "--api-key",

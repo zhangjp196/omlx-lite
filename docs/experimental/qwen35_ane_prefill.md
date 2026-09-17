@@ -24,7 +24,7 @@ logits remain on GPU.
 - Apple silicon with the private `AppleNeuralEngine.framework` runtime present.
 - The dual path is intended for M3 Ultra, where the two dies expose physical
   ANE instances 1 and 2.
-- The oMLX native custom kernels must be built (`OMLX_WITH_CUSTOM_KERNEL=1`).
+- The oMLX Lite native custom kernels must be built (`OMLX_WITH_CUSTOM_KERNEL=1`).
 - Dense Qwen3.5/3.6/3.8 affine q4/q5/q6/q8 gate/up linears with group size 64
   or 128. The optimized fused q4 path remains unchanged; compatible quantized
   weights are retained for every GPU suffix. The down projection may use
@@ -109,7 +109,7 @@ address window at program-create. That window is about 4 GiB per ANE
 instance, so the dual 53%/50% Qwen3.8-27B layout at roughly 3.75 GiB per
 bank fits one bank per die on M3 Ultra but cannot host both banks on a
 single-die chip such as M3 Max, where the load fails with 0x20004. When a
-bank fails to load, oMLX first retries with two near-half banks per
+bank fails to load, oMLX Lite first retries with two near-half banks per
 instance and then with progressively smaller split banks before falling
 back to per-layer programs; `OMLX_QWEN35_ANE_BANK_MAX_BYTES`
 forces an initial per-bank cap for testing, counted on the source weights

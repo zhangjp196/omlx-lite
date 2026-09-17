@@ -161,9 +161,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.messageText = "Enable `omlx` in Terminal?"
         alert.informativeText = """
-        oMLX could not create a public `omlx` command in /opt/homebrew/bin or /usr/local/bin.
+        oMLX Lite could not create a public `omlx` command in /opt/homebrew/bin or /usr/local/bin.
 
-        To make `omlx` available in new Terminal sessions, oMLX can add a small PATH block to your shell init file. This only happens if you choose Update Shell File.
+        To make `omlx` available in new Terminal sessions, oMLX Lite can add a small PATH block to your shell init file. This only happens if you choose Update Shell File.
 
         \(reason)
         """
@@ -450,7 +450,7 @@ extension AppDelegate: AppControlHandling {
                 status: "unavailable",
                 state: .stopped,
                 server: nil,
-                message: "Managed server is unavailable. Complete the oMLX first-run setup in the app."
+                message: "Managed server is unavailable. Complete the oMLX Lite first-run setup in the app."
             )
         }
 
@@ -489,7 +489,7 @@ extension AppDelegate: AppControlHandling {
                 status: "stopped",
                 state: server.state,
                 server: server,
-                message: "oMLX stopped"
+                message: "oMLX Lite stopped"
             )
 
         case .restart:

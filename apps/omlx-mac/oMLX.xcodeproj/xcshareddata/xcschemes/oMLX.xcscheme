@@ -15,7 +15,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "1AAAAAAAAAAAAAAAAAAAAAA2"
-               BuildableName = "oMlx lite.app"
+               BuildableName = "oMLX Lite.app"
                BlueprintName = "oMLX"
                ReferencedContainer = "container:oMLX.xcodeproj">
             </BuildableReference>
@@ -55,7 +55,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1AAAAAAAAAAAAAAAAAAAAAA2"
-            BuildableName = "oMLX.app"
+            BuildableName = "oMLX Lite.app"
             BlueprintName = "oMLX"
             ReferencedContainer = "container:oMLX.xcodeproj">
          </BuildableReference>
@@ -72,7 +72,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1AAAAAAAAAAAAAAAAAAAAAA2"
-            BuildableName = "oMLX.app"
+            BuildableName = "oMLX Lite.app"
             BlueprintName = "oMLX"
             ReferencedContainer = "container:oMLX.xcodeproj">
          </BuildableReference>

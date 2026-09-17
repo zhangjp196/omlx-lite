@@ -114,7 +114,7 @@ class TestLifecycleCommand:
         monkeypatch.setattr(cli, "_open_macos_app", MagicMock())
 
         assert cli.lifecycle_command(self._args("stop")) == 0
-        assert capsys.readouterr().out.strip() == "oMLX stopped"
+        assert capsys.readouterr().out.strip() == "oMLX Lite stopped"
         cli._open_macos_app.assert_not_called()
 
     def test_app_bundle_start_sends_command_and_waits(self, monkeypatch):

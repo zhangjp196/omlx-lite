@@ -38,13 +38,13 @@ enum UpdateInstaller {
             case .invalidBundlePaths(let message):
                 return "Invalid updater bundle paths: \(message)"
             case .parentExitTimedOut(let pid):
-                return "Timed out waiting for oMLX process \(pid) to exit"
+                return "Timed out waiting for oMLX Lite process \(pid) to exit"
             case .atomicSwapFailed(let code, let message):
                 return "Atomic app swap failed with errno \(code): \(message)"
             case .launchAgentFailed(let message):
                 return "Could not start the updater launch agent: \(message)"
             case .relaunchFailed(let message):
-                return "Could not relaunch oMLX: \(message)"
+                return "Could not relaunch oMLX Lite: \(message)"
             }
         }
     }

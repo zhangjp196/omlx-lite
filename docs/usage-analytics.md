@@ -5,7 +5,7 @@ Yesterday, 7/30/90 Days, and This Month, with model filtering, token totals,
 per-model generation speed, and a day/hour token heatmap. History starts when
 this version first serves requests; existing all-time totals cannot be backfilled.
 
-Usage stays on this server. No telemetry is sent. Only the canonical oMLX model
+Usage stays on this server. No telemetry is sent. Only the canonical oMLX Lite model
 ID, hourly bucket, request/token counts, and accumulated durations are stored.
 There are no prompts, responses, messages, token IDs, API keys, headers, client
 IPs, upload names, or document contents. Model IDs are the same identifiers used
@@ -73,9 +73,9 @@ found at startup is moved to one `usage.sqlite3.corrupt` recovery backup (plus a
 SQLite sidecars) and a fresh database is created. Future schema versions are left
 untouched. Runtime corruption can require a server restart.
 
-To reset history, stop oMLX and remove `usage.sqlite3`, `usage.sqlite3-wal`, and
+To reset history, stop oMLX Lite and remove `usage.sqlite3`, `usage.sqlite3-wal`, and
 `usage.sqlite3-shm` from the configured base directory, if present. Remove the
-`.corrupt` backup and its sidecars too if desired. Restart oMLX to begin fresh.
+`.corrupt` backup and its sidecars too if desired. Restart oMLX Lite to begin fresh.
 Clearing Session or All Time in the dashboard does not erase history.
 
 ## Disabling

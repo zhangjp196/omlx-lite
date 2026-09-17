@@ -90,7 +90,7 @@ enum ShellEnvWriter {
             if let first = firstCLIPathInCurrentPath(),
                !isManagedCLI(path: first, shimURL: shimURL) {
                 return .needsShellPathPrompt(
-                    reason: "\(first.path) appears before the oMLX app-managed command on PATH."
+                    reason: "\(first.path) appears before the oMLX Lite app-managed command on PATH."
                 )
             }
             return .publicCommandReady(path: path.path)
@@ -201,7 +201,7 @@ enum ShellEnvWriter {
                 if isManagedCLI(path: link, shimURL: shimURL) {
                     return .installed(link)
                 }
-                reasons.append("\(link.path) already exists and is not managed by oMLX.")
+                reasons.append("\(link.path) already exists and is not managed by oMLX Lite.")
                 continue
             }
             guard fm.isWritableFile(atPath: dir.path) else {

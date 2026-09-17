@@ -29,12 +29,12 @@ final class AppUpdater {
         var description: String {
             switch self {
             case .notWritable(let path):
-                return "Cannot write to \(path). Move oMLX.app to a writable location and try again."
+                return "Cannot write to \(path). Move oMLX Lite.app to a writable location and try again."
             case .downloadFailed(let m): return "Download failed: \(m)"
             case .mountFailed(let m): return "Could not mount DMG: \(m)"
             case .unmountFailed(let m): return "Could not unmount DMG: \(m)"
             case .cleanupFailed(let m): return "Could not clean up update files: \(m)"
-            case .appNotFoundInVolume: return "oMLX.app not found inside the downloaded DMG"
+            case .appNotFoundInVolume: return "oMLX Lite.app not found inside the downloaded DMG"
             case .stageFailed(let m): return "Could not stage the update: \(m)"
             case .cancelled: return "Update cancelled"
             }
@@ -391,7 +391,7 @@ final class AppUpdater {
     }
 
     private func findAppInVolume(_ mountPoint: URL) throws -> URL {
-        let preferred = mountPoint.appendingPathComponent("oMLX.app")
+        let preferred = mountPoint.appendingPathComponent("oMLX Lite.app")
         if FileManager.default.fileExists(atPath: preferred.path) { return preferred }
         let entries = (try? FileManager.default.contentsOfDirectory(atPath: mountPoint.path)) ?? []
         for name in entries where name.hasSuffix(".app") {

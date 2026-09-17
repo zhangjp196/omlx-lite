@@ -511,19 +511,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bring the oMLX icon back if it was removed from the menu bar. Separate from the Dock icon."
+            "value" : "Bring the oMLX Lite icon back if it was removed from the menu bar. Separate from the Dock icon."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Вернуть значок oMLX, если он был удалён из строки меню. Не связано со значком в Dock."
+            "value" : "Вернуть значок oMLX Lite, если он был удалён из строки меню. Не связано со значком в Dock."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "如果 oMLX 图标已从菜单栏移除，将其恢复。与 Dock 图标独立。"
+            "value" : "如果 oMLX Lite 图标已从菜单栏移除，将其恢复。与 Dock 图标独立。"
           }
         }
       }
@@ -1645,19 +1645,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copyright © oMLX contributors. Licensed under the Apache License, Version 2.0. See the LICENSE file in the repository for the full text."
+            "value" : "Copyright © oMLX Lite contributors. Licensed under the Apache License, Version 2.0. See the LICENSE file in the repository for the full text."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copyright © участники проекта oMLX. Распространяется по лицензии Apache License, Version 2.0. Полный текст см. в файле LICENSE в репозитории."
+            "value" : "Copyright © участники проекта oMLX Lite. Распространяется по лицензии Apache License, Version 2.0. Полный текст см. в файле LICENSE в репозитории."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copyright © oMLX 贡献者。依据 Apache License 2.0 许可。完整文本请参见仓库中的 LICENSE 文件。"
+            "value" : "Copyright © oMLX Lite 贡献者。依据 Apache License 2.0 许可。完整文本请参见仓库中的 LICENSE 文件。"
           }
         }
       }
@@ -5200,19 +5200,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This is a LoRA adapter. It needs a compatible base model to run — downloading on its own won't load in oMLX."
+            "value" : "This is a LoRA adapter. It needs a compatible base model to run — downloading on its own won't load in oMLX Lite."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Это LoRA-адаптер. Для запуска нужна совместимая базовая модель — сам по себе он не загрузится в oMLX."
+            "value" : "Это LoRA-адаптер. Для запуска нужна совместимая базовая модель — сам по себе он не загрузится в oMLX Lite."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这是一个 LoRA 适配器。它需要兼容的基座模型才能运行 — 单独下载无法在 oMLX 中加载。"
+            "value" : "这是一个 LoRA 适配器。它需要兼容的基座模型才能运行 — 单独下载无法在 oMLX Lite 中加载。"
           }
         }
       }
@@ -6464,19 +6464,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Another oMLX server is already running on this port (%@). Stop it before starting a new instance, or change the port in Settings."
+            "value" : "Another oMLX Lite server is already running on this port (%@). Stop it before starting a new instance, or change the port in Settings."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "На этом порту (%@) уже запущен другой сервер oMLX. Остановите его перед запуском нового экземпляра или измените порт в настройках."
+            "value" : "На этом порту (%@) уже запущен другой сервер oMLX Lite. Остановите его перед запуском нового экземпляра или измените порт в настройках."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "另一个 oMLX 服务器已在该端口上运行（%@）。请先停止它再启动新实例，或在设置中更改端口。"
+            "value" : "另一个 oMLX Lite 服务器已在该端口上运行（%@）。请先停止它再启动新实例，或在设置中更改端口。"
           }
         }
       }
@@ -6536,19 +6536,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Check that the configured model directory is mounted and readable. If it is on an external or protected location, grant oMLX access in macOS Privacy & Security settings."
+            "value" : "Check that the configured model directory is mounted and readable. If it is on an external or protected location, grant oMLX Lite access in macOS Privacy & Security settings."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Проверьте, что настроенный каталог моделей подключен и доступен для чтения. Если он находится на внешнем или защищенном диске, выдайте oMLX доступ в настройках macOS «Конфиденциальность и безопасность»."
+            "value" : "Проверьте, что настроенный каталог моделей подключен и доступен для чтения. Если он находится на внешнем или защищенном диске, выдайте oMLX Lite доступ в настройках macOS «Конфиденциальность и безопасность»."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请确认已配置的模型目录已挂载且可读。如果位于外部或受保护的位置，请在 macOS 隐私与安全性设置中授予 oMLX 访问权限。"
+            "value" : "请确认已配置的模型目录已挂载且可读。如果位于外部或受保护的位置，请在 macOS 隐私与安全性设置中授予 oMLX Lite 访问权限。"
           }
         }
       }
@@ -6608,19 +6608,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "oMLX Server Failed to Start"
+            "value" : "oMLX Lite Server Failed to Start"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Не удалось запустить сервер oMLX"
+            "value" : "Не удалось запустить сервер oMLX Lite"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX 服务器启动失败"
+            "value" : "oMLX Lite 服务器启动失败"
           }
         }
       }
@@ -6752,19 +6752,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX stopped"
+            "value" : "oMLX Lite stopped"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX остановлен"
+            "value" : "oMLX Lite остановлен"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX 已停止"
+            "value" : "oMLX Lite 已停止"
           }
         }
       }
@@ -6824,19 +6824,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "About oMLX"
+            "value" : "About oMLX Lite"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "О приложении oMLX"
+            "value" : "О приложении oMLX Lite"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "关于 oMLX"
+            "value" : "关于 oMLX Lite"
           }
         }
       }
@@ -6848,19 +6848,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Chat with oMLX"
+            "value" : "Chat with oMLX Lite"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Чат с oMLX"
+            "value" : "Чат с oMLX Lite"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "与 oMLX 对话"
+            "value" : "与 oMLX Lite 对话"
           }
         }
       }
@@ -6920,19 +6920,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Install oMLX %@…"
+            "value" : "Install oMLX Lite %@…"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Установить oMLX %@…"
+            "value" : "Установить oMLX Lite %@…"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "安装 oMLX %@…"
+            "value" : "安装 oMLX Lite %@…"
           }
         }
       }
@@ -6944,19 +6944,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Quit oMLX"
+            "value" : "Quit oMLX Lite"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Выйти из oMLX"
+            "value" : "Выйти из oMLX Lite"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "退出 oMLX"
+            "value" : "退出 oMLX Lite"
           }
         }
       }
@@ -7878,13 +7878,13 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX"
+            "value" : "oMLX Lite"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX"
+            "value" : "oMLX Lite"
           }
         }
       }
@@ -11136,19 +11136,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oQ: oMLX Universal Dynamic Quantization"
+            "value" : "oQ: oMLX Lite Universal Dynamic Quantization"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oQ: универсальное динамическое квантование oMLX"
+            "value" : "oQ: универсальное динамическое квантование oMLX Lite"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oQ：oMLX 通用动态量化"
+            "value" : "oQ：oMLX Lite 通用动态量化"
           }
         }
       }
@@ -11184,19 +11184,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oQ produces standard mlx-lm models that work everywhere — oMLX, mlx-lm, LM Studio, and any app that supports MLX safetensors format."
+            "value" : "oQ produces standard mlx-lm models that work everywhere — oMLX Lite, mlx-lm, LM Studio, and any app that supports MLX safetensors format."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oQ создаёт стандартные модели mlx-lm, которые работают везде — в oMLX, mlx-lm, LM Studio и любом приложении с поддержкой формата MLX safetensors."
+            "value" : "oQ создаёт стандартные модели mlx-lm, которые работают везде — в oMLX Lite, mlx-lm, LM Studio и любом приложении с поддержкой формата MLX safetensors."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oQ 生成标准 mlx-lm 模型，可在任何地方运行 — oMLX、mlx-lm、LM Studio 以及任何支持 MLX safetensors 格式的应用。"
+            "value" : "oQ 生成标准 mlx-lm 模型，可在任何地方运行 — oMLX Lite、mlx-lm、LM Studio 以及任何支持 MLX safetensors 格式的应用。"
           }
         }
       }
@@ -12716,19 +12716,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pick a full-precision model, choose an oQ level, and oMLX builds a mixed-precision plan tuned to that model's per-layer sensitivity. Output is standard mlx-lm safetensors — usable in any MLX runtime."
+            "value" : "Pick a full-precision model, choose an oQ level, and oMLX Lite builds a mixed-precision plan tuned to that model's per-layer sensitivity. Output is standard mlx-lm safetensors — usable in any MLX runtime."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Выберите full-precision модель и уровень oQ, а oMLX построит mixed-precision план, настроенный под послойную чувствительность этой модели. Результат — стандартные safetensors mlx-lm, пригодные для любого MLX runtime."
+            "value" : "Выберите full-precision модель и уровень oQ, а oMLX Lite построит mixed-precision план, настроенный под послойную чувствительность этой модели. Результат — стандартные safetensors mlx-lm, пригодные для любого MLX runtime."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择一个全精度模型，选择 oQ 级别，oMLX 会构建一个针对该模型每层敏感度调整的混合精度计划。输出是标准 mlx-lm safetensors — 可在任何 MLX 运行时中使用。"
+            "value" : "选择一个全精度模型，选择 oQ 级别，oMLX Lite 会构建一个针对该模型每层敏感度调整的混合精度计划。输出是标准 mlx-lm safetensors — 可在任何 MLX 运行时中使用。"
           }
         }
       }
@@ -15955,19 +15955,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX Server"
+            "value" : "oMLX Lite Server"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Сервер oMLX"
+            "value" : "Сервер oMLX Lite"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX 服务器"
+            "value" : "oMLX Lite 服务器"
           }
         }
       }
@@ -22963,19 +22963,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX Version"
+            "value" : "oMLX Lite Version"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Версия oMLX"
+            "value" : "Версия oMLX Lite"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX 版本"
+            "value" : "oMLX Lite 版本"
           }
         }
       }
@@ -24300,19 +24300,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "oMLX %@ is available"
+            "value" : "oMLX Lite %@ is available"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Доступен oMLX %@"
+            "value" : "Доступен oMLX Lite %@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX %@ 已可用"
+            "value" : "oMLX Lite %@ 已可用"
           }
         }
       }
@@ -24729,19 +24729,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX is up to date"
+            "value" : "oMLX Lite is up to date"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Установлена последняя версия oMLX"
+            "value" : "Установлена последняя версия oMLX Lite"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX 已是最新版本"
+            "value" : "oMLX Lite 已是最新版本"
           }
         }
       }
@@ -25641,19 +25641,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX will quit, install the update, and relaunch."
+            "value" : "oMLX Lite will quit, install the update, and relaunch."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX завершит работу, установит обновление и запустится снова."
+            "value" : "oMLX Lite завершит работу, установит обновление и запустится снова."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX 将退出、安装更新并重新启动。"
+            "value" : "oMLX Lite 将退出、安装更新并重新启动。"
           }
         }
       }
@@ -25713,19 +25713,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX %@ is available"
+            "value" : "oMLX Lite %@ is available"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Доступен oMLX %@"
+            "value" : "Доступен oMLX Lite %@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX %@ 可用"
+            "value" : "oMLX Lite %@ 可用"
           }
         }
       }
@@ -26121,19 +26121,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX is running locally at http://127.0.0.1:%@. Open the web dashboard to download your first model, manage settings, and connect your coding tools."
+            "value" : "oMLX Lite is running locally at http://127.0.0.1:%@. Open the web dashboard to download your first model, manage settings, and connect your coding tools."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX работает локально по адресу http://127.0.0.1:%@. Откройте веб-панель, чтобы скачать первую модель, управлять настройками и подключить инструменты для разработки."
+            "value" : "oMLX Lite работает локально по адресу http://127.0.0.1:%@. Откройте веб-панель, чтобы скачать первую модель, управлять настройками и подключить инструменты для разработки."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX 正在本地 http://127.0.0.1:%@ 上运行。打开 Web 仪表盘下载第一个模型、管理设置并连接你的编程工具。"
+            "value" : "oMLX Lite 正在本地 http://127.0.0.1:%@ 上运行。打开 Web 仪表盘下载第一个模型、管理设置并连接你的编程工具。"
           }
         }
       }
@@ -26361,19 +26361,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Port %@ is already in use (oMLX server already running)."
+            "value" : "Port %@ is already in use (oMLX Lite server already running)."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Порт %@ уже занят (сервер oMLX уже запущен)."
+            "value" : "Порт %@ уже занят (сервер oMLX Lite уже запущен)."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "端口 %@ 已被占用（oMLX 服务器已在运行）。"
+            "value" : "端口 %@ 已被占用（oMLX Lite 服务器已在运行）。"
           }
         }
       }
@@ -26553,19 +26553,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX"
+            "value" : "oMLX Lite"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX"
+            "value" : "oMLX Lite"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX"
+            "value" : "oMLX Lite"
           }
         }
       }
@@ -26625,19 +26625,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX binds to 127.0.0.1 on first run, so clients on this Mac can use it without exposing the server to your network."
+            "value" : "oMLX Lite binds to 127.0.0.1 on first run, so clients on this Mac can use it without exposing the server to your network."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "При первом запуске oMLX привязывается к 127.0.0.1, поэтому клиенты на этом Mac могут использовать его без публикации сервера в сеть."
+            "value" : "При первом запуске oMLX Lite привязывается к 127.0.0.1, поэтому клиенты на этом Mac могут использовать его без публикации сервера в сеть."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oMLX 首次运行时绑定 127.0.0.1，因此本机上的客户端可以使用它，而不会将服务器暴露给网络。"
+            "value" : "oMLX Lite 首次运行时绑定 127.0.0.1，因此本机上的客户端可以使用它，而不会将服务器暴露给网络。"
           }
         }
       }
@@ -26793,19 +26793,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Welcome to oMLX"
+            "value" : "Welcome to oMLX Lite"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Добро пожаловать в oMLX"
+            "value" : "Добро пожаловать в oMLX Lite"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "欢迎使用 oMLX"
+            "value" : "欢迎使用 oMLX Lite"
           }
         }
       }

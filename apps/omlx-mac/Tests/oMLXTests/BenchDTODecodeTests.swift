@@ -1,15 +1,11 @@
 // Covers the bench results envelope's decode contract, in both directions of
 // the app/server version skew.
 //
-// The forward case matters because `upload_state` gained `feature_flags` and
-// each result gained `system_metrics` when accelerated runs started uploading
-// instead of being withheld.
+// The forward case matters because each result gained `system_metrics` when
+// accelerated runs started carrying host telemetry.
 //
-// The backward case matters more: `BenchUploadStateDTO.skippedFeatures` is
-// non-optional, so if the server ever stopped sending that key, decoding the
-// whole `BenchResultsResponse` would throw. The results screen polls once per
-// second for up to two minutes, so a decode failure there is not one error —
-// it is 120 of them.
+// The backward case matters more: results from an older server must still
+// decode even when optional keys are absent.
 
 import XCTest
 @testable import oMLX
@@ -69,24 +65,6 @@ final class BenchDTODecodeTests: XCTestCase {
         XCTAssertEqual(response.contextProfile, .codeMixed)
     }
 
-    func testDecodeAcceleratedRun() throws {
-        let response = try decoder.decode(
-            BenchResultsResponse.self, from: try loadFixture("bench-results")
-        )
-
-        let upload = try XCTUnwrap(response.uploadState)
-        XCTAssertEqual(upload.phase, "done")
-        XCTAssertEqual(upload.successCount, 1)
-
-        let flags = try XCTUnwrap(upload.featureFlags)
-        XCTAssertEqual(flags.map(\.key), ["lightning_mtp", "turboquant_kv_4bit"])
-        XCTAssertEqual(flags.first?.label, "Lightning MTP")
-        XCTAssertEqual(flags.first?.detail, "3 draft tokens")
-        // Identifiable uses the key, which the server guarantees unique.
-        XCTAssertEqual(flags.first?.id, "lightning_mtp")
-        XCTAssertNil(flags.last?.detail)
-    }
-
     func testDecodeSystemMetrics() throws {
         let response = try decoder.decode(
             BenchResultsResponse.self, from: try loadFixture("bench-results")
@@ -120,62 +98,7 @@ final class BenchDTODecodeTests: XCTestCase {
         let response = try decoder.decode(
             BenchResultsResponse.self, from: try loadFixture("bench-results-legacy")
         )
-
-        let upload = try XCTUnwrap(response.uploadState)
-        XCTAssertEqual(upload.phase, "done")
-        // Absent on an older server — must decode as nil, not throw.
-        XCTAssertNil(upload.featureFlags)
-        XCTAssertEqual(upload.skippedFeatures, [])
+        XCTAssertEqual(response.status, "completed")
         XCTAssertNil(response.results.first?.systemMetrics)
-    }
-
-    func testDecodeSkippedExternalEndpoint() throws {
-        // The only skip reason that survives now that accelerated runs upload.
-        let json = """
-        {
-            "bench_id": "b-1",
-            "status": "completed",
-            "results": [],
-            "upload_state": {
-                "phase": "skipped",
-                "results": [],
-                "total": 0,
-                "success_count": 0,
-                "failed_count": 0,
-                "owner_hash": null,
-                "skipped_reason": "external_endpoint",
-                "skipped_features": [],
-                "feature_flags": []
-            }
-        }
-        """.data(using: .utf8)!
-
-        let response = try decoder.decode(BenchResultsResponse.self, from: json)
-        let upload = try XCTUnwrap(response.uploadState)
-        XCTAssertEqual(upload.skippedReason, "external_endpoint")
-        XCTAssertEqual(upload.featureFlags, [])
-    }
-
-    func testMissingSkippedFeaturesKeyFailsLoudly() {
-        // Documents why the server keeps sending an always-empty
-        // `skipped_features`: without it the whole envelope fails to decode.
-        let json = """
-        {
-            "bench_id": "b-1",
-            "status": "completed",
-            "results": [],
-            "upload_state": {
-                "phase": "done",
-                "results": [],
-                "total": 0,
-                "success_count": 0,
-                "failed_count": 0,
-                "owner_hash": null,
-                "skipped_reason": null
-            }
-        }
-        """.data(using: .utf8)!
-
-        XCTAssertThrowsError(try decoder.decode(BenchResultsResponse.self, from: json))
     }
 }

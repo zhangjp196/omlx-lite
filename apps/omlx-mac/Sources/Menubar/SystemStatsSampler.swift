@@ -70,11 +70,23 @@ final class SystemStatsSampler {
         var total: UInt64
     }
 
+    /// Samples kept per series — at the default 1 s cadence the activity
+    /// graphs cover the last minute.
+    private static let historyCapacity = 60
+
     private var previousTicks: [CPUTicks]?
     private var eHistory: [Double] = []
     private var pHistory: [Double] = []
     private var gpuHistory: [Double] = []
     private let eCoreCount = SystemStatsSampler.readECoreCount()
+
+    private static func appendHistory(_ series: inout [Double], _ value: Double) {
+        series.append(value)
+        let overflow = series.count - historyCapacity
+        if overflow > 0 {
+            series.removeFirst(overflow)
+        }
+    }
 
     func sample() -> SystemStatsSnapshot {
         var snapshot = SystemStatsSnapshot()
@@ -87,8 +99,8 @@ final class SystemStatsSampler {
                 snapshot.eCoreUsage = usage.e
                 snapshot.pCoreUsage = usage.p
                 snapshot.cpuTotalUsage = usage.total
-                MenubarMetricsStore.append(&eHistory, usage.e)
-                MenubarMetricsStore.append(&pHistory, usage.p)
+                Self.appendHistory(&eHistory, usage.e)
+                Self.appendHistory(&pHistory, usage.p)
             }
             previousTicks = ticks
         }
@@ -97,7 +109,7 @@ final class SystemStatsSampler {
             snapshot.gpuUsage = gpu.usage
             snapshot.gpuMemoryInUseBytes = gpu.memoryInUseBytes
             if let usage = gpu.usage {
-                MenubarMetricsStore.append(&gpuHistory, usage)
+                Self.appendHistory(&gpuHistory, usage)
             }
         }
 

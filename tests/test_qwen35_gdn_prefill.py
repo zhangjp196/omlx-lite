@@ -24,7 +24,23 @@ def _install_fake_qwen35(monkeypatch):
     gd = types.ModuleType("mlx_vlm.models.qwen3_5.gated_delta")
     lang = types.ModuleType("mlx_vlm.models.qwen3_5.language")
 
-    def original(q, k, v, a, b, A_log, dt_bias, state=None, mask=None, use_kernel=True):
+    def original(
+        q,
+        k,
+        v,
+        a,
+        b,
+        A_log,
+        dt_bias,
+        state=None,
+        mask=None,
+        use_kernel=True,
+        state_steps=None,
+        cache=None,
+        cache_index=1,
+    ):
+        if cache is not None:
+            return cache(state, state_steps)
         return "original", state
 
     gd.gated_delta_update = original
@@ -128,6 +144,58 @@ def test_prefill_patch_passthrough_for_decode_mask_and_unsupported_shape(monkeyp
         )[0]
         == "original"
     )
+
+
+def test_prefill_patch_forwards_recurrent_cache(monkeypatch):
+    import omlx.custom_kernels.qwen35_prefill as kernels
+    import omlx.patches.qwen35_gdn_chunked as patch
+
+    gd, _ = _install_fake_qwen35(monkeypatch)
+    monkeypatch.setattr(patch.mx.metal, "is_available", lambda: True)
+    monkeypatch.setattr(
+        kernels,
+        "gated_delta_blocked_seq",
+        lambda *args: pytest.fail("blocked kernel should not be routed with a cache"),
+    )
+
+    assert patch.apply_qwen35_gdn_prefill_patch() is True
+
+    seen = {}
+
+    def cache_update(state, state_steps):
+        seen["state"] = state
+        seen["state_steps"] = state_steps
+        return "cached_y", "cached_state"
+
+    q = _Tensor((1, 128, 16, 128))
+    v = _Tensor((1, 128, 48, 128))
+    out = gd.gated_delta_update(
+        q, q, v, _Tensor((1, 128, 48)), None, None, None, cache=cache_update
+    )
+    assert out == ("cached_y", "cached_state")
+    assert seen == {"state": None, "state_steps": None}
+
+
+def test_prefill_patch_forwards_state_steps(monkeypatch):
+    import omlx.custom_kernels.qwen35_prefill as kernels
+    import omlx.patches.qwen35_gdn_chunked as patch
+
+    gd, _ = _install_fake_qwen35(monkeypatch)
+    monkeypatch.setattr(patch.mx.metal, "is_available", lambda: True)
+    monkeypatch.setattr(
+        kernels,
+        "gated_delta_blocked_seq",
+        lambda *args: pytest.fail("blocked kernel should not be routed with state_steps"),
+    )
+
+    assert patch.apply_qwen35_gdn_prefill_patch() is True
+
+    q = _Tensor((1, 128, 16, 128))
+    v = _Tensor((1, 128, 48, 128))
+    out = gd.gated_delta_update(
+        q, q, v, _Tensor((1, 128, 48)), None, None, None, state_steps=7
+    )
+    assert out[0] == "original"
 
 
 def test_prefill_patch_chunked_impl_opt_in(monkeypatch):

@@ -9,6 +9,14 @@ import XCTest
 
 final class SystemMetricsTests: XCTestCase {
 
+    /// Resolves through the same main-bundle path as the production
+    /// `String(localized:)` calls, so the comparison holds under any host
+    /// locale; drift between the code's key/defaultValue and the catalog
+    /// still fails the assertion.
+    private func localized(_ key: String, _ fallback: String) -> String {
+        NSLocalizedString(key, value: fallback, comment: "")
+    }
+
     // MARK: - Thermal severity mapping
 
     func testThermalSeverityNominal() {
@@ -40,10 +48,14 @@ final class SystemMetricsTests: XCTestCase {
     }
 
     func testThermalLabelsMatchSeverity() {
-        XCTAssertEqual(SystemMetricsPoller.label(for: .nominal),  "Nominal")
-        XCTAssertEqual(SystemMetricsPoller.label(for: .fair),     "Fair")
-        XCTAssertEqual(SystemMetricsPoller.label(for: .serious),  "Serious")
-        XCTAssertEqual(SystemMetricsPoller.label(for: .critical), "Critical")
+        XCTAssertEqual(SystemMetricsPoller.label(for: .nominal),
+                       localized("metrics.thermal.nominal", "Nominal"))
+        XCTAssertEqual(SystemMetricsPoller.label(for: .fair),
+                       localized("metrics.thermal.fair", "Fair"))
+        XCTAssertEqual(SystemMetricsPoller.label(for: .serious),
+                       localized("metrics.thermal.serious", "Serious"))
+        XCTAssertEqual(SystemMetricsPoller.label(for: .critical),
+                       localized("metrics.thermal.critical", "Critical"))
     }
 
     // MARK: - Byte formatters

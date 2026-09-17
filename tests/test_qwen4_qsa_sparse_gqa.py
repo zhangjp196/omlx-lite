@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import mlx.core as mx
 import pytest
+from _qwen4_vendor import skip_if_unavailable
 
 from omlx.custom_kernels.glm_moe_dsa import fast
 from omlx.patches import mlx_vlm_qwen4_exp_compat as compat
 
 compat.apply_mlx_vlm_qwen4_exp_compat_patch()
+skip_if_unavailable()
 from mlx_vlm.models.qwen4_exp import qsa_fast  # noqa: E402
 
 

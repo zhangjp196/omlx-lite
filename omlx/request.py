@@ -141,9 +141,8 @@ class Request:
     block_table: Optional["BlockTable"] = None  # Block table for paged cache
     shared_prefix_blocks: int = 0  # Number of shared prefix blocks
     # Skip the post-completion prefix/SSD cache store for this request.
-    # Set by internal probes (context benchmark) whose KV must never
-    # pollute the shared cache tiers or trigger the completion-time
-    # host memcpy + disk write.
+    # Set by internal probes whose KV must never pollute the shared cache
+    # tiers or trigger the completion-time host memcpy + disk write.
     skip_cache_store: bool = False
     # Emit per-chunk timing diagnostics for an internal throughput benchmark.
     # This is never set by ordinary API traffic.

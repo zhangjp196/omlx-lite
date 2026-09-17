@@ -400,3 +400,76 @@ enum StatsFormat {
         return "\(Int((Double(sampleCount) * interval).rounded()))s"
     }
 }
+
+// MARK: - Sparkline
+
+/// Rolling line graph for one metric series. Drawn with a single Canvas
+/// pass (no charting framework): the per-tick redraw is one path build, and
+/// the trace is decorative — the numbers above carry the accessible value —
+/// so it opts out of the accessibility tree entirely.
+struct MetricSparkline: View {
+    let values: [Double]
+    let color: Color
+    var height: CGFloat = 22
+    /// Fixed Y range for bounded series (e.g. 0...1 usage fractions).
+    /// nil auto-scales to the data so small variations stay visible.
+    var domain: ClosedRange<Double>? = nil
+
+    var body: some View {
+        Canvas { context, size in
+            guard values.count > 1, size.width > 0, size.height > 0 else {
+                return
+            }
+            let low = domain?.lowerBound ?? (values.min() ?? 0)
+            let high = domain?.upperBound ?? (values.max() ?? 0)
+            // Without a fixed domain, 5% headroom keeps peaks off the top
+            // edge; a flat series draws mid-height instead of hugging the
+            // floor.
+            let span = domain.map { $0.upperBound - $0.lowerBound }
+                ?? (high - low) * 1.05
+            let isFlat = span <= .ulpOfOne
+            let stepX = size.width / CGFloat(values.count - 1)
+
+            // Inset the plot range by half the stroke width so a series
+            // pinned to the floor (0%) or ceiling doesn't center its stroke
+            // on the canvas edge and render half-clipped.
+            let lineWidth: CGFloat = 1.2
+            let plotTop = lineWidth / 2
+            let plotHeight = size.height - lineWidth
+
+            var trace = Path()
+            for (index, value) in values.enumerated() {
+                let normalized = isFlat ? 0.5 : (value - low) / span
+                let point = CGPoint(
+                    x: CGFloat(index) * stepX,
+                    y: plotTop + plotHeight * (1 - CGFloat(normalized))
+                )
+                if index == 0 {
+                    trace.move(to: point)
+                } else {
+                    trace.addLine(to: point)
+                }
+            }
+
+            var fillArea = trace
+            fillArea.addLine(to: CGPoint(x: size.width, y: size.height))
+            fillArea.addLine(to: CGPoint(x: 0, y: size.height))
+            fillArea.closeSubpath()
+            context.fill(
+                fillArea,
+                with: .linearGradient(
+                    Gradient(colors: [color.opacity(0.25), .clear]),
+                    startPoint: .zero,
+                    endPoint: CGPoint(x: 0, y: size.height)
+                )
+            )
+            context.stroke(
+                trace,
+                with: .color(color),
+                style: StrokeStyle(lineWidth: lineWidth, lineJoin: .round)
+            )
+        }
+        .frame(height: height)
+        .accessibilityHidden(true)
+    }
+}

@@ -43,7 +43,11 @@ positioned sampler present, mlx-vlm switches eligible drafters to greedy
 argmax and never calls the sampler for drafts; any plain ``sampler(...)``
 call falls through to the base sampler.
 
-Scope: processors must expose ``snapshot_state()`` / ``restore_state()``
+Scope: a processor is applied if it is either *stateless* — a pure
+``(tokens, logits) -> logits`` callable such as mlx-lm's repetition /
+presence / frequency penalties, which needs no rewind because it is
+recomputed from the reconstructed history — or exposes
+``snapshot_state()`` / ``restore_state()`` for position-keyed rewind
 (today: ``ThinkingBudgetProcessor``). Grammar constraints stay on the
 BatchGenerator fallback — beyond statefulness, a grammar mask makes the
 unconstrained drafter's proposals systematically rejectable, so the
@@ -60,9 +64,30 @@ import mlx.core as mx
 
 logger = logging.getLogger(__name__)
 
+# mlx-lm builds these as pure ``(tokens, logits) -> logits`` closures over the
+# penalty arguments, so replaying them from the reconstructed token history at
+# verify time is exact and needs no checkpointing.
+_STATELESS_PROCESSOR_NAMES = frozenset(
+    {
+        "repetition_penalty_processor",
+        "presence_penalty_processor",
+        "frequency_penalty_processor",
+        "logit_bias_processor",
+    }
+)
+
+
+def _is_stateless_processor(processor: Any) -> bool:
+    name = getattr(processor, "__qualname__", "") or getattr(
+        processor, "__name__", ""
+    )
+    return name.rsplit(".", 1)[-1] in _STATELESS_PROCESSOR_NAMES
+
 
 def supports_vlm_mtp_processing(processor: Any) -> bool:
     """True when a logits processor can be applied on the vlm_mtp path."""
+    if _is_stateless_processor(processor):
+        return True
     return callable(getattr(processor, "snapshot_state", None)) and callable(
         getattr(processor, "restore_state", None)
     )
@@ -198,11 +223,23 @@ class MTPProcessingSampler:
     # -- internals ----------------------------------------------------------
 
     def _snap(self) -> list[dict]:
-        return [proc.snapshot_state() for proc in self._processors]
+        # Only rewindable processors carry state worth checkpointing; stateless
+        # penalties are recomputed from ``self._history`` on every call.
+        return [
+            proc.snapshot_state()
+            for proc in self._processors
+            if callable(getattr(proc, "snapshot_state", None))
+        ]
 
     def _restore(self, snapshot: list[dict]) -> None:
-        for proc, state in zip(self._processors, snapshot):
-            proc.restore_state(state)
+        iterator = iter(snapshot)
+        for proc in self._processors:
+            if not callable(getattr(proc, "restore_state", None)):
+                continue
+            try:
+                proc.restore_state(next(iterator))
+            except StopIteration:
+                return
 
     def _degrade(self, reason: str) -> None:
         self._degraded = True

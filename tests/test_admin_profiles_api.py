@@ -243,6 +243,38 @@ class TestProfileRoutes:
         c.post(
             "/admin/api/models/model-a/profiles",
             json={
+                "name": "grammar",
+                "display_name": "Grammar",
+                "settings": {
+                    "guided_grammar_enabled": True,
+                    "guided_grammar": 'root ::= "YES"',
+                },
+            },
+        )
+
+        r = c.post("/admin/api/models/model-a/profiles/grammar/apply")
+
+        assert r.status_code == 200, r.text
+        settings = r.json()["settings"]
+        assert settings["guided_grammar_enabled"] is True
+        assert settings["vlm_mtp_enabled"] is False
+        assert settings["active_profile_name"] == "grammar"
+        assert mgr.get_settings("model-a").vlm_mtp_enabled is False
+
+    def test_apply_profile_keeps_vlm_mtp_with_penalty(self, client):
+        """Penalties no longer conflict with VLM MTP, so applying a penalty
+        profile must not silently disable it."""
+        c, mgr = client
+        mgr.set_settings(
+            "model-a",
+            ModelSettings(
+                vlm_mtp_enabled=True,
+                vlm_mtp_draft_model="qwen-mtp-drafter",
+            ),
+        )
+        c.post(
+            "/admin/api/models/model-a/profiles",
+            json={
                 "name": "penalty",
                 "display_name": "Penalty",
                 "settings": {"presence_penalty": 1.5},
@@ -254,9 +286,8 @@ class TestProfileRoutes:
         assert r.status_code == 200, r.text
         settings = r.json()["settings"]
         assert settings["presence_penalty"] == 1.5
-        assert settings["vlm_mtp_enabled"] is False
-        assert settings["active_profile_name"] == "penalty"
-        assert mgr.get_settings("model-a").vlm_mtp_enabled is False
+        assert settings["vlm_mtp_enabled"] is True
+        assert mgr.get_settings("model-a").vlm_mtp_enabled is True
 
     def test_apply_profile_validation_error_is_400_without_partial_write(self, client):
         c, mgr = client

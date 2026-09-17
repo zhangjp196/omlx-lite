@@ -25,7 +25,6 @@ struct DeviceInfoDTO: Codable, Sendable {
     let chipVariant: String?
     let memoryGb: Int?
     let gpuCores: Int?
-    let ownerHash: String?
 }
 
 // =============================================================================
@@ -48,11 +47,6 @@ enum BenchmarkWarmupMode: String, Codable, CaseIterable, Sendable {
 /// Body for `POST /admin/api/bench/start`. `prompt_lengths` and
 /// `batch_sizes` are server-validated against a known whitelist
 /// (1024…200000 / 2…8). `generation_length` is free-form int.
-///
-/// The server always publishes results to the public omlx.ai
-/// leaderboard after the bench completes (matching the browser admin
-/// panel). Submission is anonymous — the payload carries an
-/// owner_hash derived from hardware fingerprint, not user identity.
 struct BenchStartRequest: Encodable, Sendable {
     let modelId: String
     let contextProfile: BenchmarkContextProfile
@@ -140,78 +134,12 @@ struct BenchSystemMetricsDTO: Codable, Equatable, Sendable {
     let memory: Memory?
 }
 
-/// One acceleration feature that was active during the run. The server ships
-/// the display label so a newly added feature renders correctly without an app
-/// update.
-struct BenchFeatureFlagDTO: Codable, Equatable, Sendable, Identifiable {
-    let key: String
-    let label: String
-    let detail: String?
-
-    var id: String { key }
-}
-
 struct BenchResultsResponse: Codable, Sendable {
     let benchId: String
     let status: String
     let contextProfile: BenchmarkContextProfile?
     let results: [BenchResultDTO]
     let error: String?
-    /// Mirror of the SSE `upload` / `upload_done` / `upload_skipped` events
-    /// (omlx/admin/benchmark.py:_upload_to_omlx_ai). Populated server-side
-    /// as the upload progresses so polling clients render the same state
-    /// the HTML admin panel sees over its event stream.
-    let uploadState: BenchUploadStateDTO?
-}
-
-/// Per-run upload state. Lives on `BenchmarkRun.upload_state` server-side.
-struct BenchUploadStateDTO: Codable, Equatable, Sendable {
-    /// "idle" | "uploading" | "done" | "skipped"
-    let phase: String
-    let results: [BenchUploadResultDTO]
-    let total: Int
-    let successCount: Int
-    let failedCount: Int
-    /// Display owner hash (verify char stripped). Populated on phase=done.
-    let ownerHash: String?
-    /// Set when phase=skipped. Only external-endpoint runs skip now —
-    /// accelerated runs upload and are tagged instead.
-    let skippedReason: String?
-    /// Retained for wire compatibility; the server always sends it empty.
-    let skippedFeatures: [String]
-    /// Acceleration active during the run. Optional so an older server that
-    /// does not send the key still decodes.
-    let featureFlags: [BenchFeatureFlagDTO]?
-}
-
-/// One context-length's upload outcome. Exactly one of `url` / `error`
-/// should be populated; `duplicate=true` flags rows the server already had.
-///
-/// The JSON `id` field from the server (a submission UUID, nullable on
-/// errors) is renamed to `submissionId` so the SwiftUI `Identifiable`
-/// conformance can use `contextLength` as a stable, non-optional key.
-struct BenchUploadResultDTO: Codable, Equatable, Sendable, Identifiable {
-    let contextLength: Int
-    let submissionId: String?
-    let url: String?
-    let duplicate: Bool?
-    let error: String?
-
-    var id: Int { contextLength }
-
-    // The client's JSONDecoder uses convertFromSnakeCase, which transforms
-    // JSON keys *before* matching against CodingKey raw values. So we only
-    // declare a custom raw value for `submissionId`, whose JSON name (`id`)
-    // can't be derived from snake_case conversion. The rest use synthesized
-    // raw values (`contextLength`, etc.) that the strategy produces from
-    // the server's snake_case keys.
-    enum CodingKeys: String, CodingKey {
-        case contextLength
-        case submissionId = "id"
-        case url
-        case duplicate
-        case error
-    }
 }
 
 struct BenchCancelResponse: Codable, Sendable {
@@ -365,27 +293,6 @@ struct AccuracyProgressDTO: Codable, Equatable, Sendable {
     let benchmark: String?
 }
 
-/// Community upload outcome for one accuracy suite, attached to its result
-/// by the server after the suite completes (local runs only). Same JSON `id`
-/// → `submissionId` rename rationale as BenchUploadResultDTO above.
-struct AccuracyUploadDTO: Codable, Equatable, Sendable {
-    let submissionId: String?
-    let url: String?
-    let duplicate: Bool?
-    let error: String?
-    /// Non-nil when the server chose not to upload, e.g. "min_questions"
-    /// for runs under the 100-question leaderboard minimum.
-    let skipped: String?
-
-    enum CodingKeys: String, CodingKey {
-        case submissionId = "id"
-        case url
-        case duplicate
-        case error
-        case skipped
-    }
-}
-
 struct AccuracyResultDTO: Codable, Equatable, Sendable, Identifiable {
     let benchmark: String
     let modelId: String
@@ -395,9 +302,6 @@ struct AccuracyResultDTO: Codable, Equatable, Sendable, Identifiable {
     let timeS: Double
     let thinkingUsed: Bool
     let categoryScores: [String: Double]?
-    /// Optional so results from servers predating the community upload
-    /// (and external-endpoint runs, which never upload) still decode.
-    let upload: AccuracyUploadDTO?
 
     /// Synthetic ID — the server doesn't emit one and `(benchmark,
     /// model)` is unique within an accAllResults array.
@@ -409,56 +313,4 @@ struct AccuracyResultsResponse: Codable, Sendable {
     let running: Bool
     let currentModel: String
     let currentBenchId: String
-}
-
-// =============================================================================
-// MARK: - Context bench
-// =============================================================================
-
-/// Body for `POST /admin/api/bench/context/start`. `target_tokens` is
-/// server-validated against {16384, 32768, 65536, 131072, 262144, 524288}.
-struct ContextBenchStartRequest: Encodable, Sendable {
-    let modelId: String
-    let targetTokens: Int
-}
-
-struct ContextBenchStartResponse: Codable, Sendable {
-    let benchId: String
-    let status: String
-    let targetTokens: Int
-}
-
-/// Final measurement emitted by the context bench's `result` event and
-/// mirrored on `GET /api/bench/context/{id}/results`.
-struct ContextBenchResultDTO: Codable, Equatable, Sendable {
-    let modelId: String
-    let targetTokens: Int
-    let nativeContextLength: Int?
-    /// Raw admission boundary (token-exact bisection result).
-    let measuredTokens: Int
-    /// The prompt size the verification prefill actually completed.
-    let verifiedTokens: Int
-    let verifiedPromptTokens: Int?
-    /// Final 2k-floored value written to `max_context_window`.
-    let appliedTokens: Int
-    let applied: Bool
-    /// "memory" | "target" | "native"
-    let cappedBy: String
-    let attempts: Int
-    /// Prefill tok/s of the successful verify run (0 when unmeasured).
-    let prefillTps: Double?
-    let durationS: Double
-}
-
-/// Poll surface for the Swift screen: status + mirrored progress fields
-/// (`phase` / `progress` 0-100 / `message`) + the final result.
-struct ContextBenchStatusResponse: Codable, Sendable {
-    let benchId: String
-    /// "running" | "completed" | "cancelled" | "error"
-    let status: String
-    let phase: String
-    let progress: Double
-    let message: String
-    let result: ContextBenchResultDTO?
-    let error: String?
 }

@@ -69,13 +69,12 @@ final class LocalizationSmokeTests: XCTestCase {
         "profile.scope.preset", "profile.detail.section.sampling",
         "bench.accuracy.header.title", "bench.accuracy.section.queue",
         "bench.throughput.header.title", "bench.throughput.section.configuration",
-        "bench.context.header.title", "bench.context.section.configuration",
         // Settings + helpers
         "settings.section.basic", "settings.advanced.experimental.section",
         "appearance.row.menubar_icon", "appearance.row.menubar_icon.restore",
         // Menubar + updates
         "menubar.item.quit", "menubar.stats.session_section",
-        "menubar.item.settings", "menubar.item.web_dashboard",
+        "menubar.item.web_dashboard",
         "update.channel.stable", "update.confirm.title",
     ]
 

@@ -5,7 +5,6 @@ import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 
 import omlx.server  # noqa: F401 — ensure server module is imported first
 import omlx.admin.routes as admin_routes
@@ -231,7 +230,6 @@ class TestApplyModelDirsRuntime:
         monkeypatch.setattr(admin_routes, "_hf_downloader", None)
         monkeypatch.setattr(admin_routes, "_ms_downloader", None)
         monkeypatch.setattr(admin_routes, "_oq_manager", None)
-        monkeypatch.setattr(admin_routes, "_hf_uploader", None)
 
         pool = MagicMock()
         pool.get_loaded_model_ids.return_value = []
@@ -258,7 +256,6 @@ class TestApplyModelDirsRuntime:
         monkeypatch.setattr(admin_routes, "_hf_downloader", None)
         monkeypatch.setattr(admin_routes, "_ms_downloader", None)
         monkeypatch.setattr(admin_routes, "_oq_manager", None)
-        monkeypatch.setattr(admin_routes, "_hf_uploader", None)
 
         pool = MagicMock()
         pool.get_loaded_model_ids.return_value = []

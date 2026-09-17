@@ -32,10 +32,12 @@ class FakeLanguageModel:
     def __init__(self):
         self.rollback_called = False
         self.model = object()
+        self.last_kwargs = None
 
     def __call__(self, *args, **kwargs):
         from mlx_vlm.models.base import LanguageModelOutput
 
+        self.last_kwargs = kwargs
         return LanguageModelOutput(
             logits=mx.zeros((1, 1, 4)),
             hidden_states=[mx.zeros((1, 1, 8))],
@@ -114,6 +116,59 @@ class TestVLMAdapterMTPProxy:
 
         proxy(mx.array([1]), cache=[])
         assert adapter.forward_called
+
+    def test_verify_forward_forces_speculative_verifier(self):
+        """The legacy verify call must open a cache transaction.
+
+        mlx-vlm's round loop falls back to ``lm(..., return_hidden=True,
+        return_shared_kv=True)`` for mRoPE adapters. Routing that through the
+        exact verifier is what makes ``gdn_states`` a real transaction so
+        ``rollback_speculative_cache`` can roll an ArraysCache back.
+        """
+        adapter = FakeVLMAdapter()
+        proxy = _VLMAdapterMTPProxy(adapter, adapter._language_model)
+
+        proxy(
+            mx.array([1, 2]),
+            cache=[],
+            return_hidden=True,
+            return_shared_kv=True,
+        )
+        assert adapter._language_model.last_kwargs["speculative_verify"] is True
+
+    def test_plain_forward_does_not_force_speculative_verifier(self):
+        adapter = FakeVLMAdapter()
+        proxy = _VLMAdapterMTPProxy(adapter, adapter._language_model)
+
+        proxy(mx.array([1]), cache=[])
+        assert adapter._language_model.last_kwargs.get("speculative_verify") is None
+
+    def test_positioned_verify_seams_route_through_adapter(self):
+        adapter = FakeVLMAdapter(uses_mrope=True)
+        lm = adapter._language_model
+        lm.speculative_verify_hidden = lambda inputs, cache: ("h", {}, "txn")
+        lm.speculative_logits_from_hidden = lambda hidden: "logits"
+
+        proxy = _VLMAdapterMTPProxy(adapter, lm, positioned_verify=True)
+
+        hidden, shared, txn = proxy.speculative_verify_hidden(mx.array([1]), [])
+        assert hidden.shape == (1, 1, 8)
+        assert shared == {}
+        assert txn == []
+        assert lm.last_kwargs["speculative_verify"] is True
+        assert lm.last_kwargs["return_hidden"] is True
+        assert proxy.speculative_logits_from_hidden("x") == "logits"
+
+    def test_positioned_verify_seams_hidden_without_flag(self):
+        adapter = FakeVLMAdapter(uses_mrope=True)
+        lm = adapter._language_model
+        lm.speculative_verify_hidden = lambda inputs, cache: ("h", {}, "txn")
+        lm.speculative_logits_from_hidden = lambda hidden: "logits"
+
+        proxy = _VLMAdapterMTPProxy(adapter, lm)
+
+        assert not hasattr(proxy, "speculative_verify_hidden")
+        assert not hasattr(proxy, "speculative_logits_from_hidden")
 
     def test_non_language_model_attrs_delegate_to_adapter(self):
         adapter = FakeVLMAdapter()

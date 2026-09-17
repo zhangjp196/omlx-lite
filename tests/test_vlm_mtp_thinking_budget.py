@@ -71,6 +71,17 @@ class TestSnapshotRestore:
         assert supports_vlm_mtp_processing(_make_budget_processor(4))
         assert not supports_vlm_mtp_processing(lambda toks, logits: logits)
 
+    def test_stateless_penalties_supported(self):
+        """mlx-lm's repetition / presence penalties are pure closures over the
+        token history, so the vlm_mtp path can replay them without rewind."""
+        from mlx_lm.sample_utils import make_logits_processors
+
+        procs = make_logits_processors(
+            repetition_penalty=1.3, presence_penalty=0.5
+        )
+        assert len(procs) == 2
+        assert all(supports_vlm_mtp_processing(p) for p in procs)
+
     def test_restore_rewinds_forcing(self):
         proc = _make_budget_processor(2)
         history = list(PROMPT)
@@ -189,6 +200,34 @@ class TestMTPProcessingSampler:
         assert "NOT enforced" in caplog.text
         assert [int(t) for t in out.tolist()] == [THINK, THINK]
 
+    def test_stateless_penalty_replayed_from_history(self):
+        """A presence penalty excludes an already-emitted token without any
+        snapshot/restore support."""
+        from mlx_lm.sample_utils import make_logits_processors
+
+        penalty = make_logits_processors(presence_penalty=20.0)[0]
+        sampler = MTPProcessingSampler(_argmax_sampler, [penalty], PROMPT)
+        sampler.process_first_logits(_favor(THINK))
+        sampler.note_first_bonus(THINK, position=1)  # THINK now in history
+
+        out = sampler.sample_target(
+            _positioned_logprobs(1), row_ids=[0], positions=[1]
+        )
+        assert int(out.reshape(-1)[0].item()) != THINK
+        assert not sampler._degraded
+
+    def test_mixed_processors_snapshot_only_stateful(self):
+        """Checkpoints track only rewindable processors; stateless penalties
+        are re-derived from history on every call."""
+        from mlx_lm.sample_utils import make_logits_processors
+
+        budget = _make_budget_processor(4)
+        penalty = make_logits_processors(presence_penalty=0.5)[0]
+        sampler = MTPProcessingSampler(_argmax_sampler, [budget, penalty], PROMPT)
+        assert len(sampler._initial_snapshot) == 1
+        sampler.reset_processors()
+        assert not hasattr(budget, "_accepted_up_to")
+
 
 # ---------------------------------------------------------------------------
 # 3. End-to-end through mlx-vlm's real _mtp_rounds
@@ -253,6 +292,32 @@ class _FakeDrafter:
     def draft_block(self, b, hidden, x, bs, sampler, dtype):
         row = [self.pattern[i % len(self.pattern)] for i in range(bs - 1)]
         return mx.array([row], dtype=dtype)
+
+
+class _FakeAdapter:
+    """mRoPE-style VLM adapter that forwards verify to the inner LM."""
+
+    _uses_mrope = True
+
+    def __init__(self, language_model):
+        self._language_model = language_model
+        self.verify_kwargs = None
+
+    def __call__(self, inputs, inputs_embeds=None, mask=None, cache=None, **kwargs):
+        if kwargs.get("speculative_verify"):
+            self.verify_kwargs = kwargs
+            hidden, shared = self._language_model.speculative_verify_hidden(
+                inputs, cache
+            )
+            return SimpleNamespace(
+                hidden_states=[hidden],
+                shared_kv_states=shared,
+                gdn_states={"verify_len": int(inputs.shape[1])},
+            )
+        raise AssertionError("adapter forward without speculative_verify")
+
+    def rollback_speculative_cache(self, *args, **kwargs):
+        return self._language_model.rollback_speculative_cache(*args, **kwargs)
 
 
 def _run_rounds(sampler, lm=None, drafter=None, max_tokens=16, first_bonus=THINK):
@@ -336,6 +401,31 @@ class TestEndToEndMtpRounds:
         # Control: a bare sampler (pre-fix behaviour) never closes thinking.
         tokens, _, _ = _run_rounds(_argmax_sampler, max_tokens=12)
         assert all(t == THINK for t in tokens)
+
+    def test_budget_applies_through_mrope_adapter_proxy(self):
+        """The mRoPE adapter path re-exposes a positioned verify seam so the
+        round loop consults ``sample_target`` instead of pre-sampling from
+        unprocessed logits — keeping repetition / presence / budget
+        processors effective."""
+        target = _FakeTargetLM()
+        adapter = _FakeAdapter(target)
+        proxy = _VLMAdapterMTPProxy(adapter, target, positioned_verify=True)
+        proc = _make_budget_processor(budget=5)
+        sampler = MTPProcessingSampler(_argmax_sampler, [proc], PROMPT)
+        bonus = int(
+            mx.argmax(sampler.process_first_logits(_favor(THINK)), axis=-1).item()
+        )
+        sampler.note_first_bonus(bonus)
+
+        tokens, _, _ = _run_rounds(
+            sampler, lm=proxy, first_bonus=bonus, max_tokens=12
+        )
+
+        assert tokens[:4] == [THINK] * 4
+        assert tokens[4:7] == [LEAD, END, TRAIL]
+        assert proc._done
+        assert not sampler._degraded
+        assert adapter.verify_kwargs["speculative_verify"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -546,6 +636,25 @@ class TestPositionedHookVisibility:
             mrope=True, adapter_hook=True, lm_hook=False
         )
         assert vlm_mtp_positioned_sampling_available(adapter)
+
+    def test_mrope_adapter_with_exact_verifier_reports_available(self):
+        """When the inner model implements the exact verifier (Qwen3.5), the
+        proxy re-exposes a positioned hook through the adapter, so
+        per-request logits processors route through vlm_mtp instead of
+        falling back."""
+        adapter, lm = _make_adapter(mrope=True, adapter_hook=False, lm_hook=True)
+        lm.speculative_verify_hidden = _hook
+        assert vlm_mtp_positioned_sampling_available(adapter)
+
+        proxy = _VLMAdapterMTPProxy(adapter, lm, positioned_verify=True)
+        assert hasattr(proxy, "speculative_verify_hidden")
+        assert hasattr(proxy, "speculative_logits_from_hidden")
+
+    def test_mrope_adapter_without_exact_verifier_stays_unavailable(self):
+        adapter, lm = _make_adapter(mrope=True, adapter_hook=False, lm_hook=True)
+        assert not vlm_mtp_positioned_sampling_available(adapter)
+        proxy = _VLMAdapterMTPProxy(adapter, lm, positioned_verify=True)
+        assert not hasattr(proxy, "speculative_verify_hidden")
 
     def test_no_adapter_falls_back_to_model_probe(self):
         bare = SimpleNamespace(speculative_logits_from_hidden=_hook)

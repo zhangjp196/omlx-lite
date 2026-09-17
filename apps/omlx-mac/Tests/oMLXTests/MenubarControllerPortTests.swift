@@ -337,7 +337,6 @@ final class MenubarControllerPortTests: XCTestCase {
             apiKey: "test-key",
             sessionConfiguration: sessionConfiguration
         )
-        poller.setEnabledMetrics(EnabledMetrics(live: true, average: false, alltime: false))
 
         await poller.refreshOnce()
 
@@ -345,38 +344,6 @@ final class MenubarControllerPortTests: XCTestCase {
         XCTAssertEqual(poller.liveStats?.liveActivity?.menuBarTitle, "GEN 42.1 tok/s")
         XCTAssertEqual(poller.alltimeStats?.totalRequests, 3)
         XCTAssertEqual(MenubarStatsURLProtocol.recordedActivityRequestCount(), 1)
-    }
-
-    func testPollingFollowsRefreshIntervalOnlyWhileAMetricItemIsEnabled() {
-        let defaults = UserDefaults.standard
-        defaults.removeObject(forKey: MenubarMetricPrefs.refreshIntervalKey)
-        defer { defaults.removeObject(forKey: MenubarMetricPrefs.refreshIntervalKey) }
-
-        let poller = MenubarStatsPoller(
-            baseURL: URL(string: "http://omlx.test")!,
-            apiKey: "test-key"
-        )
-
-        XCTAssertEqual(poller.currentPollingInterval, 2.0)
-
-        poller.setEnabledMetrics(EnabledMetrics(live: true, average: false, alltime: false))
-        XCTAssertEqual(poller.currentPollingInterval, 1.0, "absent pref defaults to 1 s")
-
-        defaults.set(0.5, forKey: MenubarMetricPrefs.refreshIntervalKey)
-        XCTAssertEqual(poller.currentPollingInterval, 0.5)
-
-        defaults.set(42.0, forKey: MenubarMetricPrefs.refreshIntervalKey)
-        XCTAssertEqual(poller.currentPollingInterval, 1.0, "out-of-set values clamp to 1 s")
-
-        poller.setEnabledMetrics(EnabledMetrics(live: false, average: true, alltime: false))
-        defaults.set(3.0, forKey: MenubarMetricPrefs.refreshIntervalKey)
-        XCTAssertEqual(
-            poller.currentPollingInterval, 3.0,
-            "any enabled metric item drives the configured cadence, not just live"
-        )
-
-        poller.setEnabledMetrics(EnabledMetrics(live: false, average: false, alltime: false))
-        XCTAssertEqual(poller.currentPollingInterval, 2.0)
     }
 
     func testRefreshOnceLoadsActivityWithoutAPIKeyWhenServerAllowsIt() async {
@@ -387,7 +354,6 @@ final class MenubarControllerPortTests: XCTestCase {
             apiKey: nil,
             sessionConfiguration: sessionConfiguration
         )
-        poller.setEnabledMetrics(EnabledMetrics(live: true, average: false, alltime: false))
 
         await poller.refreshOnce()
 
@@ -403,7 +369,6 @@ final class MenubarControllerPortTests: XCTestCase {
             apiKey: "test-key",
             sessionConfiguration: sessionConfiguration
         )
-        poller.setEnabledMetrics(EnabledMetrics(live: true, average: false, alltime: false))
         let observer = NotificationCenter.default.addObserver(
             forName: MenubarStatsPoller.didUpdateNotification,
             object: poller,
@@ -418,23 +383,6 @@ final class MenubarControllerPortTests: XCTestCase {
         XCTAssertEqual(MenubarStatsURLProtocol.recordedUpdateNotificationCount(), 1)
     }
 
-    func testRefreshOnceSkipsLiveAdminStatsWhenActivityDisplayIsDisabled() async {
-        let sessionConfiguration = URLSessionConfiguration.ephemeral
-        sessionConfiguration.protocolClasses = [MenubarStatsURLProtocol.self]
-        let poller = MenubarStatsPoller(
-            baseURL: URL(string: "http://omlx.test")!,
-            apiKey: "test-key",
-            sessionConfiguration: sessionConfiguration
-        )
-
-        poller.setEnabledMetrics(EnabledMetrics(live: false, average: false, alltime: false))
-        await poller.refreshOnce()
-
-        XCTAssertEqual(poller.sessionStats?.totalPromptTokens, 99)
-        XCTAssertNil(poller.liveStats)
-        XCTAssertEqual(MenubarStatsURLProtocol.recordedActivityRequestCount(), 0)
-    }
-
     func testRefreshOnceClearsLiveActivityAfterActivityFailure() async {
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.protocolClasses = [MenubarStatsURLProtocol.self]
@@ -443,7 +391,6 @@ final class MenubarControllerPortTests: XCTestCase {
             apiKey: "test-key",
             sessionConfiguration: sessionConfiguration
         )
-        poller.setEnabledMetrics(EnabledMetrics(live: true, average: false, alltime: false))
 
         await poller.refreshOnce()
         XCTAssertNotNil(poller.liveStats?.liveActivity)
@@ -462,7 +409,6 @@ final class MenubarControllerPortTests: XCTestCase {
             apiKey: "test-key",
             sessionConfiguration: sessionConfiguration
         )
-        poller.setEnabledMetrics(EnabledMetrics(live: true, average: false, alltime: false))
 
         await poller.refreshOnce()
         XCTAssertNotNil(poller.liveStats?.liveActivity)
@@ -640,10 +586,9 @@ final class MenubarControllerPortTests: XCTestCase {
 
     // MARK: - menuAvailability
 
-    func testMenuAvailabilityDisablesSettingsWhenServerIsOffline() {
+    func testMenuAvailabilityDisablesBrowserItemsWhenServerIsOffline() {
         for state in [ServerProcess.State.stopped, .failed(message: "Port 8000 in use")] {
             let availability = MenubarController.menuAvailability(for: state)
-            XCTAssertFalse(availability.settings)
             XCTAssertFalse(availability.webDashboard)
             XCTAssertFalse(availability.chat)
         }
@@ -651,7 +596,6 @@ final class MenubarControllerPortTests: XCTestCase {
 
     func testMenuAvailabilityEnablesBrowserItemsOnlyWhenRunning() {
         let availability = MenubarController.menuAvailability(for: .running(pid: 123))
-        XCTAssertTrue(availability.settings)
         XCTAssertTrue(availability.webDashboard)
         XCTAssertTrue(availability.chat)
     }
@@ -665,7 +609,6 @@ final class MenubarControllerPortTests: XCTestCase {
 
         for state in states {
             let availability = MenubarController.menuAvailability(for: state)
-            XCTAssertFalse(availability.settings)
             XCTAssertFalse(availability.webDashboard)
             XCTAssertFalse(availability.chat)
         }

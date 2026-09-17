@@ -6,10 +6,7 @@ real-time progress reporting via SSE events.
 """
 
 import asyncio
-import json
 import logging
-import os
-import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -20,7 +17,6 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, field_validator
 
-from ..model_discovery import model_display_name
 from ..utils.proc_memory import get_lifetime_max_phys_footprint
 from ..utils.system_sampler import SystemSampler
 from .external_api import ExternalAPIClient, ExternalEndpointConfig
@@ -161,8 +157,8 @@ class BenchmarkRun:
     SSE delivery model: events are appended to `events` (append-only
     log) under `cond`. Subscribers replay `events` from offset 0 then
     wait on `cond` for new entries. `terminal` is set once the final
-    event (`upload_done` / `error`) has been published so subscribers
-    know to close their stream rather than wait for a follow-up.
+    event (`done` / `error`) has been published so subscribers know to
+    close their stream rather than wait for a follow-up.
     """
 
     bench_id: str
@@ -174,89 +170,15 @@ class BenchmarkRun:
     task: Optional[asyncio.Task] = None
     results: list[dict] = field(default_factory=list)
     error_message: str = ""
-    # Acceleration features active when the benchmark started. Results are
-    # uploaded either way; the flags ride along so the leaderboard can mark
-    # and filter them instead of silently mixing them in.
-    experimental_features: list[str] = field(default_factory=list)
-    # Same snapshot in the upload payload's shape: [{key, label, detail?}].
-    feature_flags: list[dict] = field(default_factory=list)
-    # Performance-relevant subset of the model's settings at run start.
-    model_settings_snapshot: Optional[dict] = None
     # Host telemetry sampler, running for the duration of the tests.
     sampler: Optional[Any] = None
     # Lifetime footprint high-water mark before the tests began, so the run's
     # own peak can be told apart from a larger one set earlier in the process.
     lifetime_footprint_at_start: int = 0
-    # Mirror of the upload SSE events so REST consumers (e.g. native Swift
-    # app polling /results) can render leaderboard status without opening
-    # the stream. Phases: "idle" → "uploading" → "done" | "skipped". The
-    # browser HTML still consumes the SSE stream directly; this is purely
-    # additive state that lives alongside it.
-    upload_state: dict = field(
-        default_factory=lambda: {
-            "phase": "idle",
-            "results": [],  # per-context-length: {context_length, id?, url?, duplicate?, error?}
-            "total": 0,
-            "success_count": 0,
-            "failed_count": 0,
-            "owner_hash": None,  # display hash, populated on upload_done
-            "skipped_reason": None,  # only "external_endpoint" reaches this now
-            # Always empty. Kept because BenchDTO.swift declares it non-optional,
-            # so dropping the key would fail decoding on every app build that has
-            # not been updated — which turns into a per-second error loop while the
-            # results poller runs.
-            "skipped_features": [],
-            "feature_flags": [],  # [{key, label, detail?}]
-        }
-    )
 
 
-# Event types that close the SSE stream for a bench run. `done` is NOT
-# terminal — it marks "tests finished, upload starting"; the real end of
-# stream is `upload_done` (or `error`). `upload_skipped` is the external
-# endpoint's last event: without it here, subscribers to an external run would
-# wait for an `upload_done` that never comes.
-_BENCH_TERMINAL_TYPES = frozenset({"upload_done", "upload_skipped", "error"})
-
-
-@dataclass(frozen=True)
-class _FeatureFlagSpec:
-    """One acceleration toggle, in both the legacy and upload projections."""
-
-    attr: str
-    legacy: str
-    key: str
-    label: str
-    detail_attr: Optional[str] = None
-    detail_key_fmt: Optional[str] = None
-    detail_label_fmt: Optional[str] = None
-
-
-# `mtp_enabled` is surfaced as "Lightning MTP" everywhere in the UI, so the
-# upload key follows the user-facing name rather than the settings field.
-_FEATURE_FLAG_SPECS = (
-    _FeatureFlagSpec("dflash_enabled", "dflash", "dflash", "DFlash"),
-    _FeatureFlagSpec(
-        "specprefill_enabled", "specprefill", "specprefill", "SpecPrefill"
-    ),
-    _FeatureFlagSpec(
-        "turboquant_kv_enabled",
-        "turboquant",
-        "turboquant_kv",
-        "TurboQuant KV",
-        detail_attr="turboquant_kv_bits",
-        detail_key_fmt="_{}bit",
-        detail_label_fmt=" {}-bit",
-    ),
-    _FeatureFlagSpec("mtp_enabled", "mtp", "lightning_mtp", "Lightning MTP"),
-    _FeatureFlagSpec("vlm_mtp_enabled", "vlm_mtp", "vlm_mtp", "VLM MTP"),
-    _FeatureFlagSpec(
-        "qwen35_ane_prefill_enabled",
-        "qwen35_ane_prefill",
-        "qwen35_ane_prefill",
-        "Qwen ANE Prefill",
-    ),
-)
+# Event types that close the SSE stream for a bench run.
+_BENCH_TERMINAL_TYPES = frozenset({"done", "error"})
 
 
 def _sample_window(run: "BenchmarkRun", window_start: float) -> Optional[dict]:
@@ -268,179 +190,6 @@ def _sample_window(run: "BenchmarkRun", window_start: float) -> Optional[dict]:
     except Exception as e:  # noqa: BLE001
         logger.debug(f"Benchmark: system metrics unavailable: {e}")
         return None
-
-
-def _detect_experimental_features(model_settings: Any) -> list[str]:
-    """Return benchmark-skewing model features enabled in settings."""
-    return [
-        spec.legacy
-        for spec in _FEATURE_FLAG_SPECS
-        if getattr(model_settings, spec.attr, False)
-    ]
-
-
-def _format_bits(value: Any) -> Optional[str]:
-    """Render a bit-width for display, dropping a trailing .0 (4.0 -> "4")."""
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return f"{number:g}"
-
-
-def _derive_feature_flags(model_settings: Any) -> list[dict]:
-    """Build the upload projection of the active acceleration features.
-
-    Objects rather than bare keys: the app and omlx.ai ship independently, so
-    carrying the display label means a newly added feature renders correctly on
-    the site from day one instead of showing a raw snake_case key until the
-    next site deploy. Only active features are included — the site derives
-    "this run was accelerated" from the list being non-empty.
-    """
-    flags: list[dict] = []
-    for spec in _FEATURE_FLAG_SPECS:
-        if not getattr(model_settings, spec.attr, False):
-            continue
-        key, label = spec.key, spec.label
-        if spec.detail_attr:
-            bits = _format_bits(getattr(model_settings, spec.detail_attr, None))
-            if bits:
-                # Keys must stay [a-z0-9_], so 2.5 becomes 2_5.
-                key += spec.detail_key_fmt.format(bits.replace(".", "_"))
-                label += spec.detail_label_fmt.format(bits)
-        flags.append({"key": key, "label": label})
-    return flags
-
-
-# Performance-relevant settings only, as an allowlist rather than a denylist:
-# ModelSettings gains fields regularly, and a denylist would ship every future
-# addition to a public endpoint by default.
-#
-# Excluded on purpose: display_name / description / model_alias (user-authored
-# free text), is_pinned / is_default / is_hidden / is_favorite /
-# active_profile_name / ttl_seconds (local organization), the guided_grammar
-# body (unbounded; the boolean is kept), chat_template_kwargs and
-# forced_ct_kwargs (arbitrary user dicts), and trust_remote_code (security
-# posture, not performance). The *_draft_model fields are included but reduced
-# to a basename — the drafter's identity explains an MTP/DFlash result, while
-# the full path would leak the local filesystem layout and the OS username.
-_UPLOADED_SETTING_FIELDS = (
-    "max_context_window",
-    "max_tokens",
-    "temperature",
-    "top_p",
-    "top_k",
-    "min_p",
-    "repetition_penalty",
-    "presence_penalty",
-    "force_sampling",
-    "enable_thinking",
-    "thinking_budget_enabled",
-    "thinking_budget_tokens",
-    "reasoning_parser",
-    "guided_grammar_enabled",
-    "model_type_override",
-    "index_cache_freq",
-    "turboquant_kv_enabled",
-    "turboquant_kv_bits",
-    "turboquant_skip_last",
-    "specprefill_enabled",
-    "specprefill_draft_model",
-    "specprefill_keep_pct",
-    "specprefill_threshold",
-    "dflash_enabled",
-    "dflash_draft_model",
-    "dflash_draft_quant_enabled",
-    "dflash_draft_quant_weight_bits",
-    "dflash_draft_quant_activation_bits",
-    "dflash_draft_quant_group_size",
-    "dflash_max_ctx",
-    "dflash_in_memory_cache",
-    "dflash_in_memory_cache_max_entries",
-    "dflash_ssd_cache",
-    "dflash_draft_window_size",
-    "dflash_draft_sink_size",
-    "dflash_block_size",
-    "dflash_verify_mode",
-    "mtp_enabled",
-    "mtp_num_draft_tokens",
-    "vlm_mtp_enabled",
-    "vlm_mtp_draft_model",
-    "vlm_mtp_draft_block_size",
-    "qwen35_ane_prefill_enabled",
-    "qwen35_ane_prefill_sequence_length",
-    "qwen35_ane_prefill_tail_padding_min_tokens",
-    "qwen35_ane_prefill_fraction",
-    "qwen35_ane_prefill_shared_fraction",
-    "qwen35_ane_prefill_fused_down",
-    "qwen35_ane_prefill_max_layers",
-    "qwen35_ane_prefill_dual_ane",
-    "qwen35_ane_prefill_gdn",
-    "qwen35_ane_prefill_gdn_fraction",
-    "qwen35_ane_prefill_gdn_max_layers",
-    "qwen35_ane_prefill_cpu_enabled",
-    "qwen35_ane_prefill_cpu_fraction",
-    "qwen35_ane_prefill_cpu_down_fraction",
-    "qwen35_ane_prefill_cpu_gdn_fraction",
-    "qwen35_ane_prefill_cpu_threads",
-    "qwen35_ane_prefill_cpu_shared_resource",
-)
-
-_PATH_VALUED_SETTING_FIELDS = frozenset(
-    {
-        "specprefill_draft_model",
-        "dflash_draft_model",
-        "vlm_mtp_draft_model",
-    }
-)
-
-_MAX_UPLOADED_SETTINGS_BYTES = 4096
-
-
-def _filter_uploaded_settings(model_settings: Any) -> Optional[dict]:
-    """Project model settings onto the uploadable allowlist."""
-    to_dict = getattr(model_settings, "to_dict", None)
-    if not callable(to_dict):
-        return None
-    try:
-        raw = to_dict()
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"Benchmark: failed to serialize model settings: {e}")
-        return None
-
-    filtered: dict = {}
-    for key in _UPLOADED_SETTING_FIELDS:
-        if key not in raw:
-            continue
-        value = raw[key]
-        if key in _PATH_VALUED_SETTING_FIELDS and isinstance(value, str):
-            value = os.path.basename(value.rstrip("/")) or value
-        filtered[key] = value
-
-    if len(json.dumps(filtered, separators=(",", ":"))) > _MAX_UPLOADED_SETTINGS_BYTES:
-        logger.warning(
-            "Benchmark: model settings snapshot exceeded "
-            f"{_MAX_UPLOADED_SETTINGS_BYTES} bytes, uploading accelerator flags only"
-        )
-        filtered = {
-            spec.attr: filtered[spec.attr]
-            for spec in _FEATURE_FLAG_SPECS
-            if spec.attr in filtered
-        }
-    return filtered
-
-
-def _with_benchmark_context(
-    context_profile: BenchmarkContextProfile | str,
-    model_settings: dict | None,
-) -> dict:
-    """Prepend the benchmark context to the uploaded settings snapshot."""
-    settings = dict(model_settings or {})
-    settings.pop("benchmark_context", None)
-    return {
-        "benchmark_context": benchmark_context_label(context_profile),
-        **settings,
-    }
 
 
 def get_run(bench_id: str) -> Optional[BenchmarkRun]:
@@ -1262,408 +1011,6 @@ async def _run_external_batch_test(
     }
 
 
-OMLX_AI_API_URL = "https://omlx.ai/api/benchmarks"
-
-# The leaderboard accepts model_name up to 150 characters.
-_MAX_MODEL_NAME_LEN = 150
-
-
-def _detect_quantization(model_path: str) -> str:
-    """Detect model quantization from config.json or directory name.
-
-    Fallback chain: config.json → directory name → "unknown"
-    """
-    config_path = Path(model_path) / "config.json"
-    if config_path.exists():
-        try:
-            with open(config_path) as f:
-                config = json.load(f)
-            qconfig = config.get("quantization_config", {})
-            bits = qconfig.get("bits")
-            if bits is not None:
-                return f"{bits}bit"
-        except Exception:
-            pass
-
-    # Fallback: extract from directory name
-    dirname = Path(model_path).name
-    match = re.search(
-        r"(2bit|3bit|4bit|6bit|8bit|fp16|bf16|MXFP4|NVFP4)", dirname, re.IGNORECASE
-    )
-    if match:
-        return match.group(1).lower()
-
-    return "unknown"
-
-
-def _upload_model_name(model_id: str) -> str:
-    """Model name to publish: exactly what oMLX shows and its copy button copies.
-
-    Quantization and MLX suffixes used to be stripped here, which lost the one
-    detail that distinguishes two builds of the same model on the leaderboard.
-    The trailing path component is taken defensively — discovery registers ids
-    as a single path component today, so this is a no-op for local runs.
-    """
-    name = model_id.rstrip("/").split("/")[-1]
-    return name[:_MAX_MODEL_NAME_LEN]
-
-
-def _upload_model_repo(
-    model_id: str, entry: Any = None, model_dirs: Any = None
-) -> Optional[str]:
-    """Org-qualified repo id to publish alongside the model name (#1808).
-
-    Uses the same derivation as the models UI display name: the HF repo id
-    when known, otherwise the org/leaf relative path under a configured
-    model dir. Returns None when nothing beyond the bare model id can be
-    derived (flat layouts), so the site simply shows no repo for those rows.
-    """
-    if entry is None:
-        return None
-    try:
-        derived = model_display_name(
-            model_id,
-            getattr(entry, "model_path", None),
-            list(model_dirs or []),
-            source_repo_id=getattr(entry, "source_repo_id", None),
-        )
-    except Exception as e:  # noqa: BLE001
-        logger.debug(f"Benchmark: repo derivation failed: {e}")
-        return None
-    if not isinstance(derived, str) or derived == model_id or "/" not in derived:
-        return None
-    return derived[:_MAX_MODEL_NAME_LEN]
-
-
-def _sanitize_upload_error(resp: Any) -> str:
-    """Extract a user-presentable error string from a failed upload response.
-
-    Avoids dumping raw HTML bodies (e.g. Cloudflare's "Just a moment..."
-    challenge interstitial) into the dashboard's red-x error column.
-    Detects CF mitigation specifically so users get actionable context
-    instead of a 5KB markup blob.
-
-    Resolution order:
-    1. Cloudflare challenge — header ``cf-mitigated: challenge`` is
-       authoritative; a body sniff for "just a moment" / "cf-chl" covers
-       edge transports that strip the header.
-    2. JSON envelope — the omlx.ai API's normal error shape; extract
-       ``error`` / ``detail`` / ``message`` if present, truncated.
-    3. Plain-text body — short responses only; HTML-looking bodies are
-       collapsed to a one-line "non-JSON response (N bytes)" hint.
-    4. Fallback to the bare HTTP status code.
-    """
-    headers = getattr(resp, "headers", {}) or {}
-    cf_mitigated = str(headers.get("cf-mitigated", "")).lower()
-    body = getattr(resp, "text", "") or ""
-    status = getattr(resp, "status_code", "?")
-
-    body_head = body[:512].lower()
-    if (
-        cf_mitigated == "challenge"
-        or "just a moment" in body_head
-        or "cf-chl" in body_head
-    ):
-        return (
-            f"Upload blocked by Cloudflare (HTTP {status}). "
-            f"This is a server-side issue with omlx.ai — retry later or "
-            f"report it to the maintainer."
-        )
-
-    try:
-        data = resp.json()
-        msg = data.get("error") or data.get("detail") or data.get("message")
-        if msg:
-            return str(msg)[:300]
-    except Exception:
-        pass
-
-    text = body.strip()
-    if "<" in text and ">" in text:
-        return f"HTTP {status} — unexpected non-JSON response ({len(body)} bytes)"
-    return text[:300] or f"HTTP {status}"
-
-
-async def _upload_to_omlx_ai(run: BenchmarkRun, engine_pool: Any) -> None:
-    """Upload benchmark results to omlx.ai community benchmarks.
-
-    Sends each single-request result as a separate submission,
-    grouped by submission_group. Upload failures don't affect
-    the benchmark run status.
-    """
-    import requests
-
-    from .._version import __version__
-    from ..utils.hardware import (
-        compute_owner_hash,
-        get_chip_name,
-        get_gpu_core_count,
-        get_io_platform_uuid,
-        get_os_version,
-        get_total_memory_gb,
-        parse_chip_info,
-    )
-
-    # Accelerated runs upload too. They carry their flags so the leaderboard
-    # can mark and filter them, which is more useful than withholding the one
-    # set of numbers people most want to see.
-    run.upload_state["feature_flags"] = list(run.feature_flags)
-    if run.feature_flags:
-        logger.info(
-            "Benchmark upload tagged with acceleration flags: "
-            f"{[f['key'] for f in run.feature_flags]}"
-        )
-
-    run.upload_state["phase"] = "uploading"
-    await _send_event(
-        run,
-        {
-            "type": "progress",
-            "phase": "upload",
-            "message": "Uploading to community benchmarks...",
-            "current": 0,
-            "total": 0,
-        },
-    )
-
-    # Collect hardware info
-    chip_string = get_chip_name()
-    chip_name, chip_variant = parse_chip_info(chip_string)
-    memory_gb = round(get_total_memory_gb())
-    gpu_cores = get_gpu_core_count()
-    os_version = get_os_version()
-    omlx_version = __version__
-
-    # Compute owner_hash
-    owner_hash_full = None
-    owner_hash_display = None
-    io_uuid = get_io_platform_uuid()
-    if io_uuid:
-        owner_hash_full = compute_owner_hash(io_uuid, chip_name, gpu_cores, memory_gb)
-        # Display hash is without the verify character
-        owner_hash_display = owner_hash_full[:-1]
-
-    # Get model info
-    entry = engine_pool.get_entry(run.request.model_id)
-    model_path = entry.model_path if entry else ""
-    quantization = _detect_quantization(model_path)
-    model_name = _upload_model_name(run.request.model_id)
-
-    # Generate submission group
-    submission_group = str(uuid.uuid4())
-
-    # Peak process memory for the run. ri_lifetime_max_phys_footprint is a
-    # high-water mark since process start, so it only describes this benchmark
-    # when the benchmark actually set a new maximum — a server that previously
-    # held a larger model would otherwise report that older peak. Fall back to
-    # the sampler's own maximum, which is scoped to the run.
-    peak_footprint_gb = None
-    lifetime_end = get_lifetime_max_phys_footprint()
-    peak_bytes = 0
-    if lifetime_end and lifetime_end > run.lifetime_footprint_at_start:
-        peak_bytes = lifetime_end
-    elif run.sampler is not None:
-        peak_bytes = run.sampler.run_peak_footprint()
-    if peak_bytes > 0:
-        peak_footprint_gb = round(peak_bytes / (1024**3), 2)
-
-    # Collect single results and batch results
-    single_results = [r for r in run.results if r.get("test_type") == "single"]
-    uploadable_single_results = [
-        r for r in single_results if float(r.get("gen_tps", 0.0) or 0.0) > 0.0
-    ]
-    skipped_count = len(single_results) - len(uploadable_single_results)
-    batch_results = [r for r in run.results if r.get("test_type") == "batch"]
-
-    # Build batching_results from batch data
-    batching_results = []
-    pp1024_single = next((r for r in single_results if r.get("pp") == 1024), None)
-    if (
-        pp1024_single
-        and float(pp1024_single.get("gen_tps", 0.0) or 0.0) > 0.0
-        and batch_results
-    ):
-        baseline_tps = pp1024_single["gen_tps"]
-        batching_results.append(
-            {
-                "batch_size": 1,
-                "tg_tps": baseline_tps,
-                "speedup": 1.0,
-            }
-        )
-        for br in batch_results:
-            speedup = round(br["tg_tps"] / baseline_tps, 2) if baseline_tps > 0 else 1.0
-            batching_results.append(
-                {
-                    "batch_size": br["batch_size"],
-                    "tg_tps": br["tg_tps"],
-                    "speedup": speedup,
-                }
-            )
-
-    success_count = 0
-    failed_count = 0
-
-    if skipped_count:
-        logger.info(
-            f"Benchmark upload skipped {skipped_count} result(s) without "
-            f"measurable generation throughput"
-        )
-
-    for result in uploadable_single_results:
-        context_length = result["pp"]
-        peak_mem_gb = None
-        if result.get("peak_memory_bytes") and result["peak_memory_bytes"] > 0:
-            peak_mem_gb = round(result["peak_memory_bytes"] / (1024**3), 2)
-
-        payload = {
-            "chip_name": chip_name,
-            "chip_variant": chip_variant,
-            "memory_gb": memory_gb,
-            "gpu_cores": gpu_cores,
-            "omlx_version": omlx_version,
-            "os_version": os_version,
-            "model_name": model_name,
-            "quantization": quantization,
-            "context_length": context_length,
-            "context_profile": run.request.context_profile.value,
-            "pp_tps": result["processing_tps"],
-            "tg_tps": result["gen_tps"],
-            "ttft_ms": result.get("ttft_ms"),
-            "peak_memory_gb": peak_mem_gb,
-            "submission_group": submission_group,
-            "peak_footprint_gb": peak_footprint_gb,
-            "feature_flags": run.feature_flags,
-            "model_settings": _with_benchmark_context(
-                run.request.context_profile,
-                run.model_settings_snapshot,
-            ),
-            # Per-row: each context length has its own load window. Stays None
-            # when sampling was unavailable, so the site does not average
-            # fabricated zeros in as measurements.
-            "system_metrics": result.get("system_metrics"),
-        }
-
-        if owner_hash_full:
-            payload["owner_hash"] = owner_hash_full
-
-        # Attach batching_results only to the first submission (lowest context_length)
-        if context_length == uploadable_single_results[0]["pp"] and batching_results:
-            payload["batching_results"] = batching_results
-
-        try:
-            resp = await asyncio.to_thread(
-                requests.post,
-                OMLX_AI_API_URL,
-                json=payload,
-                timeout=15,
-            )
-
-            if resp.status_code == 201:
-                data = resp.json()
-                success_count += 1
-                result_dict = {
-                    "context_length": context_length,
-                    "id": data.get("id"),
-                    "url": data.get("url"),
-                }
-                run.upload_state["results"].append(result_dict)
-                await _send_event(
-                    run,
-                    {
-                        "type": "upload",
-                        "data": result_dict,
-                    },
-                )
-            elif resp.status_code == 409:
-                data = resp.json()
-                success_count += 1  # Duplicate is still ok
-                result_dict = {
-                    "context_length": context_length,
-                    "id": data.get("existing_id"),
-                    "url": data.get("existing_url"),
-                    "duplicate": True,
-                }
-                run.upload_state["results"].append(result_dict)
-                await _send_event(
-                    run,
-                    {
-                        "type": "upload",
-                        "data": result_dict,
-                    },
-                )
-            else:
-                failed_count += 1
-                error_msg = _sanitize_upload_error(resp)
-                result_dict = {
-                    "context_length": context_length,
-                    "error": error_msg,
-                }
-                run.upload_state["results"].append(result_dict)
-                await _send_event(
-                    run,
-                    {
-                        "type": "upload",
-                        "data": result_dict,
-                    },
-                )
-                # Surface the sanitized message to ops; the full body
-                # (truncated) goes to debug so it can still be retrieved
-                # from the log file if needed.
-                logger.warning(
-                    f"Benchmark upload failed for pp{context_length}: "
-                    f"{resp.status_code} {error_msg}"
-                )
-                if (resp.text or "")[:1] not in ("{", "["):
-                    logger.debug(
-                        "Benchmark upload non-JSON body (truncated): %r",
-                        (resp.text or "")[:500],
-                    )
-
-        except Exception as e:
-            failed_count += 1
-            result_dict = {
-                "context_length": context_length,
-                "error": str(e),
-            }
-            run.upload_state["results"].append(result_dict)
-            await _send_event(
-                run,
-                {
-                    "type": "upload",
-                    "data": result_dict,
-                },
-            )
-            logger.warning(f"Benchmark upload error for pp{context_length}: {e}")
-
-    run.upload_state["phase"] = "done"
-    run.upload_state["total"] = len(uploadable_single_results)
-    run.upload_state["success_count"] = success_count
-    run.upload_state["failed_count"] = failed_count
-    run.upload_state["skipped_count"] = skipped_count
-    run.upload_state["owner_hash"] = owner_hash_display
-    await _send_event(
-        run,
-        {
-            "type": "upload_done",
-            "data": {
-                "owner_hash": owner_hash_display,
-                "total": len(uploadable_single_results),
-                "success": success_count,
-                "failed": failed_count,
-                "skipped": skipped_count,
-                # Also on the event so SSE-only consumers (the HTML dashboard) get
-                # the flags without polling /results.
-                "feature_flags": run.feature_flags,
-            },
-        },
-    )
-
-    logger.info(
-        f"Benchmark upload complete: {success_count}/"
-        f"{len(uploadable_single_results)} succeeded, skipped={skipped_count}"
-    )
-
 
 async def run_benchmark(run: BenchmarkRun, engine_pool: Any) -> None:
     """Execute a complete benchmark run.
@@ -1688,29 +1035,14 @@ async def run_benchmark(run: BenchmarkRun, engine_pool: Any) -> None:
     previous_speed_priority = _pin_speed_priority(engine_pool)
 
     try:
-        run.model_settings_snapshot = _with_benchmark_context(
-            request.context_profile,
-            None,
-        )
-        # Snapshot experimental flags at run start. Settings can change mid-run,
-        # and the produced numbers are tied to whatever was active when
-        # generation actually ran.
         model_settings = None
         sm = getattr(engine_pool, "_settings_manager", None)
         if sm is not None:
             try:
                 model_settings = sm.get_settings(request.model_id)
-                run.experimental_features.extend(
-                    _detect_experimental_features(model_settings)
-                )
-                run.feature_flags = _derive_feature_flags(model_settings)
-                run.model_settings_snapshot = _with_benchmark_context(
-                    request.context_profile,
-                    _filter_uploaded_settings(model_settings),
-                )
             except Exception as e:
                 logger.warning(
-                    f"Benchmark: failed to read experimental flags for "
+                    f"Benchmark: failed to read model settings for "
                     f"{request.model_id}: {e}"
                 )
 
@@ -1834,7 +1166,6 @@ async def run_benchmark(run: BenchmarkRun, engine_pool: Any) -> None:
             run.sampler = None
 
         # Phase 3: Single request tests
-        single_pp1024_gen_tps = None
         ane_trace_config: dict[str, Any] | None = None
         if model_settings is not None and getattr(
             model_settings, "qwen35_ane_prefill_enabled", False
@@ -1843,9 +1174,9 @@ async def run_benchmark(run: BenchmarkRun, engine_pool: Any) -> None:
                 getattr(model_settings, "qwen35_ane_prefill_gdn", False)
             )
             # The settings flag only records intent. The load-time patch stores
-            # what it actually compiled on the model, so the trace and the
-            # uploaded metadata reflect the runtime state (the patch can find
-            # no eligible layers or drop layers at the program budget).
+            # what it actually compiled on the model, so the trace reflects the
+            # runtime state (the patch can find no eligible layers or drop
+            # layers at the program budget).
             loaded_model = getattr(engine, "_model", None)
             compiled_mlp = getattr(
                 loaded_model, "_omlx_ane_mlp_prefill_count", None
@@ -1884,21 +1215,6 @@ async def run_benchmark(run: BenchmarkRun, engine_pool: Any) -> None:
                 ),
                 "active": ane_active,
             }
-            if not ane_active:
-                run.feature_flags = [
-                    flag
-                    for flag in run.feature_flags
-                    if flag.get("key") != "qwen35_ane_prefill"
-                ]
-                run.experimental_features = [
-                    feature
-                    for feature in run.experimental_features
-                    if feature != "qwen35_ane_prefill"
-                ]
-                logger.info(
-                    "Qwen ANE prefill is enabled in settings but inactive at "
-                    "runtime; benchmark metadata reports it as off"
-                )
         logger.info(
             "[benchmark-ane-config] model=%s enabled=%s config=%s",
             request.model_id,
@@ -1973,10 +1289,6 @@ async def run_benchmark(run: BenchmarkRun, engine_pool: Any) -> None:
             run.results.append(result)
 
             await _send_event(run, {"type": "result", "data": result})
-
-            # Store pp1024 gen_tps for speedup calculation
-            if pp_len == 1024:
-                single_pp1024_gen_tps = metrics["gen_tps"]
 
         # Phase 4: Batch tests
         # Each request has a unique UUID prefix (no cache hits)
@@ -2059,41 +1371,6 @@ async def run_benchmark(run: BenchmarkRun, engine_pool: Any) -> None:
             },
         )
 
-        # Aligned prompts intentionally use non-standard PP4097/8193/etc.
-        # Keep them local rather than mixing them into PP4096 leaderboard
-        # buckets or depending on the remote service accepting arbitrary PP.
-        if request.align_prompt_to_ane:
-            run.upload_state["phase"] = "skipped"
-            run.upload_state["skipped_reason"] = "ane_aligned_prompt"
-            await _send_event(
-                run,
-                {
-                    "type": "upload_skipped",
-                    "reason": "ane_aligned_prompt",
-                    "features": run.feature_flags,
-                },
-            )
-            return
-
-        # Upload results to omlx.ai (failures don't affect benchmark status)
-        try:
-            await _upload_to_omlx_ai(run, engine_pool)
-        except Exception as e:
-            logger.warning(f"Benchmark upload to omlx.ai failed: {e}")
-            await _send_event(
-                run,
-                {
-                    "type": "upload_done",
-                    "data": {
-                        "owner_hash": None,
-                        "total": 0,
-                        "success": 0,
-                        "failed": 0,
-                        "error": str(e),
-                    },
-                },
-            )
-
     except asyncio.CancelledError:
         run.status = "cancelled"
         await _send_event(
@@ -2138,8 +1415,8 @@ async def run_benchmark(run: BenchmarkRun, engine_pool: Any) -> None:
 async def _run_external_benchmark(run: BenchmarkRun) -> None:
     """Execute a benchmark run against an external OpenAI-compatible endpoint.
 
-    No local model phases (unload/load/JIT warmup) and no community
-    upload — external numbers measure someone else's hardware.
+    No local model phases (unload/load/JIT warmup) — external numbers
+    measure someone else's hardware.
     """
     request = run.request
     total_tests = len(request.prompt_lengths) + len(request.batch_sizes)
@@ -2256,20 +1533,6 @@ async def _run_external_benchmark(run: BenchmarkRun) -> None:
                     "total_time": round(overall_duration, 1),
                     "total_tests": total_tests,
                 },
-            },
-        )
-
-        # External results measure remote hardware — never upload them to
-        # the omlx.ai community leaderboard. Mirrors the experimental-
-        # features skip so REST pollers see the same upload_state shape.
-        run.upload_state["phase"] = "skipped"
-        run.upload_state["skipped_reason"] = "external_endpoint"
-        await _send_event(
-            run,
-            {
-                "type": "upload_skipped",
-                "reason": "external_endpoint",
-                "features": [],
             },
         )
 

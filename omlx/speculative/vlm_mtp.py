@@ -227,13 +227,47 @@ class _VLMAdapterMTPProxy:
     exposes ``language_model`` while ``draft_model.reset(model)`` runs.
     """
 
-    def __init__(self, adapter: nn.Module, language_model: Any) -> None:
+    def __init__(
+        self,
+        adapter: nn.Module,
+        language_model: Any,
+        *,
+        positioned_verify: bool = False,
+    ) -> None:
         self._adapter = adapter
         self._language_model = language_model
         self._expose_language_model = False
         self._allow_language_model_fast_paths = not bool(
             getattr(adapter, "_uses_mrope", False)
         )
+        # When the round loop carries per-request logits processors, expose
+        # adapter-routed verify seams so mlx-vlm uses the positioned
+        # ``sample_target`` hook instead of pre-sampling target tokens from
+        # unprocessed logits (which would silently drop the processors).
+        if positioned_verify and _adapter_supports_positioned_verify(language_model):
+            self.speculative_verify_hidden = self._verify_hidden_through_adapter
+            self.speculative_logits_from_hidden = (
+                self._logits_from_hidden_through_adapter
+            )
+
+    def _verify_hidden_through_adapter(self, inputs: mx.array, cache: Any) -> Any:
+        result = self._adapter(
+            inputs,
+            cache=cache,
+            capture_layer_ids=[],
+            speculative_verify=True,
+            return_hidden=True,
+            return_shared_kv=True,
+            skip_logits=True,
+        )
+        return (
+            result.hidden_states[-1],
+            result.shared_kv_states,
+            result.gdn_states,
+        )
+
+    def _logits_from_hidden_through_adapter(self, hidden: mx.array) -> mx.array:
+        return self._language_model.speculative_logits_from_hidden(hidden)
 
     def __getattr__(self, name: str) -> Any:
         if name == "language_model":
@@ -251,6 +285,19 @@ class _VLMAdapterMTPProxy:
             return getattr(self._language_model, name)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        # The round loop's only direct target forward through this proxy is
+        # mlx-vlm's legacy verify call (``return_hidden=True`` +
+        # ``return_shared_kv=True``). Under current mlx-vlm that forward no
+        # longer captures recurrent state by itself: the ``gdn_states`` it
+        # returns is None unless the model routes through the exact
+        # speculative verifier, which is what opens the cache transaction.
+        # Without the transaction, a rejected draft reaches
+        # ``rollback_speculative_cache`` with ``state=None`` and blows up with
+        # "ArraysCache cannot roll back a speculative block". Force the
+        # verifier on this seam; the scheduler's capture prefill calls the
+        # adapter directly, so it is unaffected.
+        if kwargs.get("return_hidden") and "speculative_verify" not in kwargs:
+            kwargs["speculative_verify"] = True
         return self._adapter(*args, **kwargs)
 
     # Binders resolve these seams on the class (mock attributes must not pose as
@@ -295,8 +342,25 @@ class _MTPResetBindingProxy:
         return self._drafter.reset(target_model, *args, **kwargs)
 
 
+def _adapter_supports_positioned_verify(language_model: Any) -> bool:
+    """True when the proxy can route a positioned verify through the adapter.
+
+    For mRoPE adapters ``_VLMAdapterMTPProxy`` hides the inner model's
+    ``speculative_*`` fast paths so verify keeps mRoPE position handling.
+    When per-request logits processors are present the proxy instead
+    exposes its own adapter-routed verify seams (see
+    ``_VLMAdapterMTPProxy``), which keeps positions correct while still
+    consulting mlx-vlm's positioned ``sample_target`` hook. Both the exact
+    verifier and the hidden-to-logits projection must exist on the inner
+    model for that to work.
+    """
+    return hasattr(language_model, "speculative_verify_hidden") and hasattr(
+        language_model, "speculative_logits_from_hidden"
+    )
+
+
 def vlm_mtp_positioned_sampling_available(target_language_model: Any) -> bool:
-    """True when mlx-vlm's round loop will see ``speculative_logits_from_hidden``.
+    """True when mlx-vlm's round loop will consult the positioned hook.
 
     The positioned ``sample_target`` verify path — the application point for
     per-request logits processors on the vlm_mtp path — is only consulted
@@ -309,6 +373,10 @@ def vlm_mtp_positioned_sampling_available(target_language_model: Any) -> bool:
     directly would report the hook as available while the round loop
     falls back to plain vectorized sampling — silently dropping the
     processors (#2399).
+
+    For mRoPE adapters the proxy re-exposes the hook through the adapter
+    when the inner model implements the exact verifier, so processors can
+    be applied without bypassing position handling.
 
     This helper mirrors the proxy's visibility rules exactly; the
     equivalence is pinned by tests against the real proxy resolution.
@@ -327,9 +395,9 @@ def vlm_mtp_positioned_sampling_available(target_language_model: Any) -> bool:
     # in which case ``speculative_*`` names are blocked at the proxy.
     if hasattr(target_language_model, "speculative_logits_from_hidden"):
         return True
-    if bool(getattr(target_language_model, "_uses_mrope", False)):
-        return False
-    return hasattr(adapter_lm, "speculative_logits_from_hidden")
+    if not bool(getattr(target_language_model, "_uses_mrope", False)):
+        return hasattr(adapter_lm, "speculative_logits_from_hidden")
+    return _adapter_supports_positioned_verify(adapter_lm)
 
 
 def load_vlm_mtp_drafter(path: str) -> Optional[VLMMTPDrafter]:
@@ -420,7 +488,11 @@ def run_vlm_mtp_decode(
     drafter_model = drafter.model
     adapter_lm = getattr(target_language_model, "_language_model", None)
     if adapter_lm is not None:
-        target_for_rounds = _VLMAdapterMTPProxy(target_language_model, adapter_lm)
+        target_for_rounds = _VLMAdapterMTPProxy(
+            target_language_model,
+            adapter_lm,
+            positioned_verify=callable(getattr(sampler, "sample_target", None)),
+        )
         drafter_model = _MTPResetBindingProxy(drafter.model, target_for_rounds)
 
     is_batch = isinstance(first_bonus, mx.array) and first_bonus.size > 1

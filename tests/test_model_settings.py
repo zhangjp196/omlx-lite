@@ -13,6 +13,7 @@ from omlx.model_settings import (
     ModelSettingsManager,
     resolve_qwen35_prefill_conflicts,
     resolve_vlm_mtp_conflicts,
+    vlm_mtp_processor_conflicts,
 )
 
 
@@ -723,8 +724,6 @@ class TestVlmMtpProcessorExclusivity:
     @pytest.mark.parametrize(
         "field,value",
         [
-            ("repetition_penalty", 1.2),
-            ("presence_penalty", 0.5),
             ("guided_grammar_enabled", True),
         ],
     )
@@ -741,6 +740,31 @@ class TestVlmMtpProcessorExclusivity:
         )
         assert settings.vlm_mtp_enabled is True
         assert settings.thinking_budget_enabled is True
+
+    def test_penalties_no_longer_conflict(self):
+        """Repetition / presence penalties are stateless, so
+        MTPProcessingSampler replays them from the reconstructed history at
+        verify time without needing a rewindable checkpoint."""
+        settings = ModelSettings(
+            vlm_mtp_enabled=True,
+            repetition_penalty=1.3,
+            presence_penalty=0.5,
+        )
+        assert settings.vlm_mtp_enabled is True
+        assert settings.repetition_penalty == 1.3
+        assert settings.presence_penalty == 0.5
+
+    def test_processor_conflicts_only_guided_grammar(self):
+        conflicts = vlm_mtp_processor_conflicts(
+            {
+                "vlm_mtp_enabled": True,
+                "repetition_penalty": 1.3,
+                "presence_penalty": 0.5,
+                "thinking_budget_enabled": True,
+                "guided_grammar_enabled": True,
+            }
+        )
+        assert conflicts == ["guided_grammar_enabled"]
 
     def test_conflicts_ignored_when_vlm_mtp_off(self):
         settings = ModelSettings(
@@ -764,9 +788,9 @@ class TestVlmMtpProcessorExclusivity:
         assert conflicts == []
 
     def test_load_migrates_legacy_conflict_preserving_settings(self):
-        """A pre-rule settings file combining vlm_mtp with a penalty must load
-        with vlm_mtp disabled and every other field intact, instead of the
-        whole blob being dropped by the load-time except."""
+        """A pre-rule settings file combining vlm_mtp with guided grammar
+        must load with vlm_mtp disabled and every other field intact, instead
+        of the whole blob being dropped by the load-time except."""
         with tempfile.TemporaryDirectory() as tmpdir:
             settings_file = Path(tmpdir) / "model_settings.json"
             settings_file.write_text(
@@ -777,6 +801,7 @@ class TestVlmMtpProcessorExclusivity:
                             "legacy-model": {
                                 "vlm_mtp_enabled": True,
                                 "vlm_mtp_draft_model": "gemma-assistant",
+                                "guided_grammar_enabled": True,
                                 "repetition_penalty": 1.3,
                                 "max_context_window": 8192,
                                 "is_pinned": True,
@@ -790,10 +815,39 @@ class TestVlmMtpProcessorExclusivity:
             loaded = manager.get_settings("legacy-model")
 
             assert loaded.vlm_mtp_enabled is False
+            assert loaded.guided_grammar_enabled is True
             assert loaded.repetition_penalty == 1.3
             assert loaded.max_context_window == 8192
             assert loaded.is_pinned is True
             assert loaded.vlm_mtp_draft_model == "gemma-assistant"
+
+    def test_load_keeps_vlm_mtp_with_penalties(self):
+        """Penalties no longer conflict, so a saved vlm_mtp + penalty combo
+        must load unchanged instead of being migrated to vlm_mtp off."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings_file = Path(tmpdir) / "model_settings.json"
+            settings_file.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "models": {
+                            "penalty-model": {
+                                "vlm_mtp_enabled": True,
+                                "vlm_mtp_draft_model": "gemma-assistant",
+                                "repetition_penalty": 1.3,
+                                "presence_penalty": 0.5,
+                            }
+                        },
+                    }
+                )
+            )
+
+            manager = ModelSettingsManager(Path(tmpdir))
+            loaded = manager.get_settings("penalty-model")
+
+            assert loaded.vlm_mtp_enabled is True
+            assert loaded.repetition_penalty == 1.3
+            assert loaded.presence_penalty == 0.5
 
 
 # --------------------------------------------------------------------------

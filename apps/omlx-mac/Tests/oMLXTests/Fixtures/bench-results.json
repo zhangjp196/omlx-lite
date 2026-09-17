@@ -41,26 +41,5 @@
       "e2e_latency_s": 4.12,
       "peak_memory_bytes": 47244640256
     }
-  ],
-  "upload_state": {
-    "phase": "done",
-    "results": [
-      {
-        "context_length": 1024,
-        "id": "abc12345",
-        "url": "https://omlx.ai/benchmarks/abc12345"
-      }
-    ],
-    "total": 1,
-    "success_count": 1,
-    "failed_count": 0,
-    "skipped_count": 0,
-    "owner_hash": "a1b2c3d4e5f6a7b8",
-    "skipped_reason": null,
-    "skipped_features": [],
-    "feature_flags": [
-      { "key": "lightning_mtp", "label": "Lightning MTP", "detail": "3 draft tokens" },
-      { "key": "turboquant_kv_4bit", "label": "TurboQuant KV 4-bit" }
-    ]
-  }
+  ]
 }

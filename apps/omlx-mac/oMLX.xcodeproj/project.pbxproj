@@ -29,14 +29,8 @@
 		3BB000000000000000000001 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC000000000000000000001 /* AppConfig.swift */; };
 		3BB000000000000000000002 /* MenubarStatsPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC000000000000000000002 /* MenubarStatsPoller.swift */; };
 		3BB000000000000000000003 /* MenubarVisibilityWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC000000000000000000003 /* MenubarVisibilityWatcher.swift */; };
-		3BB000000000000000000010 /* MenubarMetricPrefs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC000000000000000000010 /* MenubarMetricPrefs.swift */; };
-		3BB000000000000000000011 /* MenubarMetricsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC000000000000000000011 /* MenubarMetricsStore.swift */; };
-		3BB000000000000000000012 /* MenubarMetricGlyph.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC000000000000000000012 /* MenubarMetricGlyph.swift */; };
-		3BB000000000000000000013 /* MenubarMetricItemsController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC000000000000000000013 /* MenubarMetricItemsController.swift */; };
-		3BB000000000000000000014 /* MenubarMetricPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC000000000000000000014 /* MenubarMetricPopover.swift */; };
 		3BB000000000000000000015 /* SystemStatsSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC000000000000000000015 /* SystemStatsSampler.swift */; };
 		3BB000000000000000000016 /* SystemStatsPanels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC000000000000000000016 /* SystemStatsPanels.swift */; };
-		3BB000000000000000000017 /* SystemMenubarItemsController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC000000000000000000017 /* SystemMenubarItemsController.swift */; };
 		3BB000000000000000000004 /* ShellEnvWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC000000000000000000004 /* ShellEnvWriter.swift */; };
 		3BB000000000000000000005 /* APIKeyGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC000000000000000000005 /* APIKeyGenerator.swift */; };
 		4BB000000000000000000001 /* PortConflictResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC000000000000000000001 /* PortConflictResolver.swift */; };
@@ -57,7 +51,6 @@
 		8BB00000000000000000000A /* MSTaskDTO.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CC00000000000000000000A /* MSTaskDTO.swift */; };
 		9BB000000000000000000001 /* SubKeyDTO.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CC000000000000000000001 /* SubKeyDTO.swift */; };
 		9BB000000000000000000002 /* OQDTO.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CC000000000000000000002 /* OQDTO.swift */; };
-		9BB000000000000000000003 /* HFUploadDTO.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CC000000000000000000003 /* HFUploadDTO.swift */; };
 		9BB000000000000000000004 /* BenchDTO.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CC000000000000000000004 /* BenchDTO.swift */; };
 		9BB000000000000000000005 /* PresetBundleDTO.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CC000000000000000000005 /* PresetBundleDTO.swift */; };
 		AACFCBE42FE115A200B224C0 /* ProgressBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AACFCBE32FE115A200B224C0 /* ProgressBar.swift */; };
@@ -78,7 +71,6 @@
 		DBB00000000000000000000E /* ServerProcessIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC00000000000000000000E /* ServerProcessIntegrationTests.swift */; };
 		DBB00000000000000000000F /* LocalizationSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC00000000000000000000F /* LocalizationSmokeTests.swift */; };
 		DBB000000000000000000100 /* MenubarControllerPortTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC000000000000000000100 /* MenubarControllerPortTests.swift */; };
-		DBB000000000000000000111 /* MenubarMetricTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC000000000000000000111 /* MenubarMetricTests.swift */; };
 		DBB000000000000000000112 /* SystemStatsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC000000000000000000112 /* SystemStatsTests.swift */; };
 		DBB000000000000000000101 /* ModelCardDTO.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC000000000000000000101 /* ModelCardDTO.swift */; };
 		DBB000000000000000000103 /* ModelCardDTODecodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC000000000000000000103 /* ModelCardDTODecodeTests.swift */; };
@@ -129,14 +121,8 @@
 		3CC000000000000000000001 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		3CC000000000000000000002 /* MenubarStatsPoller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenubarStatsPoller.swift; sourceTree = "<group>"; };
 		3CC000000000000000000003 /* MenubarVisibilityWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenubarVisibilityWatcher.swift; sourceTree = "<group>"; };
-		3CC000000000000000000010 /* MenubarMetricPrefs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenubarMetricPrefs.swift; sourceTree = "<group>"; };
-		3CC000000000000000000011 /* MenubarMetricsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenubarMetricsStore.swift; sourceTree = "<group>"; };
-		3CC000000000000000000012 /* MenubarMetricGlyph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenubarMetricGlyph.swift; sourceTree = "<group>"; };
-		3CC000000000000000000013 /* MenubarMetricItemsController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenubarMetricItemsController.swift; sourceTree = "<group>"; };
-		3CC000000000000000000014 /* MenubarMetricPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenubarMetricPopover.swift; sourceTree = "<group>"; };
 		3CC000000000000000000015 /* SystemStatsSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemStatsSampler.swift; sourceTree = "<group>"; };
 		3CC000000000000000000016 /* SystemStatsPanels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemStatsPanels.swift; sourceTree = "<group>"; };
-		3CC000000000000000000017 /* SystemMenubarItemsController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemMenubarItemsController.swift; sourceTree = "<group>"; };
 		3CC000000000000000000004 /* ShellEnvWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellEnvWriter.swift; sourceTree = "<group>"; };
 		3CC000000000000000000005 /* APIKeyGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIKeyGenerator.swift; sourceTree = "<group>"; };
 		4CC000000000000000000001 /* PortConflictResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortConflictResolver.swift; sourceTree = "<group>"; };
@@ -157,7 +143,6 @@
 		8CC00000000000000000000A /* MSTaskDTO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MSTaskDTO.swift; sourceTree = "<group>"; };
 		9CC000000000000000000001 /* SubKeyDTO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubKeyDTO.swift; sourceTree = "<group>"; };
 		9CC000000000000000000002 /* OQDTO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OQDTO.swift; sourceTree = "<group>"; };
-		9CC000000000000000000003 /* HFUploadDTO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HFUploadDTO.swift; sourceTree = "<group>"; };
 		9CC000000000000000000004 /* BenchDTO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchDTO.swift; sourceTree = "<group>"; };
 		9CC000000000000000000005 /* PresetBundleDTO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetBundleDTO.swift; sourceTree = "<group>"; };
 		AACFCBE32FE115A200B224C0 /* ProgressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressBar.swift; sourceTree = "<group>"; };
@@ -179,7 +164,6 @@
 		DCC00000000000000000000F /* LocalizationSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationSmokeTests.swift; sourceTree = "<group>"; };
 		DCC000000000000000000010 /* oMLXTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = oMLXTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DCC000000000000000000100 /* MenubarControllerPortTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenubarControllerPortTests.swift; sourceTree = "<group>"; };
-		DCC000000000000000000111 /* MenubarMetricTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenubarMetricTests.swift; sourceTree = "<group>"; };
 		DCC000000000000000000112 /* SystemStatsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemStatsTests.swift; sourceTree = "<group>"; };
 		DCC000000000000000000101 /* ModelCardDTO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelCardDTO.swift; sourceTree = "<group>"; };
 		DCC000000000000000000103 /* ModelCardDTODecodeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelCardDTODecodeTests.swift; sourceTree = "<group>"; };
@@ -245,7 +229,6 @@
 				DCC00000000000000000000E /* ServerProcessIntegrationTests.swift */,
 				DCC00000000000000000000F /* LocalizationSmokeTests.swift */,
 				DCC000000000000000000100 /* MenubarControllerPortTests.swift */,
-				DCC000000000000000000111 /* MenubarMetricTests.swift */,
 				DCC000000000000000000112 /* SystemStatsTests.swift */,
 				DCC000000000000000000103 /* ModelCardDTODecodeTests.swift */,
 				DCC000000000000000000901 /* BenchDTODecodeTests.swift */,
@@ -290,14 +273,8 @@
 				1CCCCCCCCCCCCCCCCCCCCCC3 /* MenubarController.swift */,
 				3CC000000000000000000002 /* MenubarStatsPoller.swift */,
 				3CC000000000000000000003 /* MenubarVisibilityWatcher.swift */,
-				3CC000000000000000000010 /* MenubarMetricPrefs.swift */,
-				3CC000000000000000000011 /* MenubarMetricsStore.swift */,
-				3CC000000000000000000012 /* MenubarMetricGlyph.swift */,
-				3CC000000000000000000013 /* MenubarMetricItemsController.swift */,
-				3CC000000000000000000014 /* MenubarMetricPopover.swift */,
 				3CC000000000000000000015 /* SystemStatsSampler.swift */,
 				3CC000000000000000000016 /* SystemStatsPanels.swift */,
-				3CC000000000000000000017 /* SystemMenubarItemsController.swift */,
 				8CC000000000000000000007 /* SystemMetricsPoller.swift */,
 			);
 			path = Menubar;
@@ -397,7 +374,6 @@
 				8CC00000000000000000000A /* MSTaskDTO.swift */,
 				9CC000000000000000000001 /* SubKeyDTO.swift */,
 				9CC000000000000000000002 /* OQDTO.swift */,
-				9CC000000000000000000003 /* HFUploadDTO.swift */,
 				9CC000000000000000000004 /* BenchDTO.swift */,
 				9CC000000000000000000005 /* PresetBundleDTO.swift */,
 				DCC000000000000000000101 /* ModelCardDTO.swift */,
@@ -546,14 +522,8 @@
 				3BB000000000000000000005 /* APIKeyGenerator.swift in Sources */,
 				3BB000000000000000000002 /* MenubarStatsPoller.swift in Sources */,
 				3BB000000000000000000003 /* MenubarVisibilityWatcher.swift in Sources */,
-				3BB000000000000000000010 /* MenubarMetricPrefs.swift in Sources */,
-				3BB000000000000000000011 /* MenubarMetricsStore.swift in Sources */,
-				3BB000000000000000000012 /* MenubarMetricGlyph.swift in Sources */,
-				3BB000000000000000000013 /* MenubarMetricItemsController.swift in Sources */,
-				3BB000000000000000000014 /* MenubarMetricPopover.swift in Sources */,
 				3BB000000000000000000015 /* SystemStatsSampler.swift in Sources */,
 				3BB000000000000000000016 /* SystemStatsPanels.swift in Sources */,
-				3BB000000000000000000017 /* SystemMenubarItemsController.swift in Sources */,
 				4BB000000000000000000001 /* PortConflictResolver.swift in Sources */,
 				4BB000000000000000000002 /* SignalHandlers.swift in Sources */,
 				4BB000000000000000000003 /* AppControlServer.swift in Sources */,
@@ -575,7 +545,6 @@
 				8BB000000000000000000007 /* SystemMetricsPoller.swift in Sources */,
 				9BB000000000000000000001 /* SubKeyDTO.swift in Sources */,
 				9BB000000000000000000002 /* OQDTO.swift in Sources */,
-				9BB000000000000000000003 /* HFUploadDTO.swift in Sources */,
 				9BB000000000000000000004 /* BenchDTO.swift in Sources */,
 				ABB000000000000000000001 /* WelcomeWindow.swift in Sources */,
 				BBB000000000000000000004 /* AppUpdater.swift in Sources */,
@@ -601,7 +570,6 @@
 				DBB00000000000000000000E /* ServerProcessIntegrationTests.swift in Sources */,
 				DBB00000000000000000000F /* LocalizationSmokeTests.swift in Sources */,
 				DBB000000000000000000100 /* MenubarControllerPortTests.swift in Sources */,
-				DBB000000000000000000111 /* MenubarMetricTests.swift in Sources */,
 				DBB000000000000000000112 /* SystemStatsTests.swift in Sources */,
 				DBB000000000000000000103 /* ModelCardDTODecodeTests.swift in Sources */,
 				DBB000000000000000000901 /* BenchDTODecodeTests.swift in Sources */,
@@ -765,6 +733,7 @@
 				MARKETING_VERSION = 0.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = app.omlx;
 				PRODUCT_NAME = "oMlx lite";
+				PRODUCT_MODULE_NAME = oMLX;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
 			};
@@ -791,6 +760,7 @@
 				MARKETING_VERSION = 0.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = app.omlx;
 				PRODUCT_NAME = "oMlx lite";
+				PRODUCT_MODULE_NAME = oMLX;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
 			};

@@ -10,8 +10,11 @@ from unittest.mock import MagicMock
 
 import mlx.core as mx
 import pytest
+from _qwen4_vendor import skip_if_unavailable
 
 from omlx.patches import mlx_vlm_qwen4_exp_compat as compat
+
+skip_if_unavailable()
 
 
 def _tiny_config():

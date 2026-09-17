@@ -145,22 +145,16 @@ def vlm_mtp_processor_conflicts(data: dict) -> list:
     The vlm_mtp decode path bypasses mlx-lm BatchGenerator, where logits
     processors are applied; with any of these set, every request would fall
     back to BatchGenerator and the toggle would never engage (#2399).
-    Neutral values (repetition 1.0, presence 0.0) build no processor and do
-    not conflict.
 
-    ``thinking_budget_enabled`` is intentionally absent: the vlm_mtp path
-    applies ``ThinkingBudgetProcessor`` at verify time via
-    ``MTPProcessingSampler`` (see omlx/speculative/processing_sampler.py),
-    so a thinking-budget default no longer forces the BatchGenerator
-    fallback.
+    Only guided grammar conflicts. ``MTPProcessingSampler`` applies both
+    the stateful ``ThinkingBudgetProcessor`` (via snapshot/restore) and the
+    stateless repetition / presence penalties (recomputed from the
+    reconstructed token history) at verify time, so those no longer force
+    the BatchGenerator fallback. A grammar mask remains on the fallback:
+    the matcher state cannot be rewound, and constraining the unconstrained
+    drafter makes its proposals systematically rejectable anyway.
     """
     conflicts = []
-    rep = data.get("repetition_penalty")
-    if rep is not None and rep != 1.0:
-        conflicts.append("repetition_penalty")
-    pres = data.get("presence_penalty")
-    if pres is not None and pres != 0.0:
-        conflicts.append("presence_penalty")
     if data.get("guided_grammar_enabled"):
         conflicts.append("guided_grammar_enabled")
     return conflicts
@@ -474,9 +468,10 @@ class ModelSettings:
     # Supported drafter types: gemma4_assistant (for Gemma 4 VLMs), qwen3_5_mtp
     # (for Qwen 3.5/3.6). Both resolve to draft_kind="mtp" in mlx-vlm.
     # Mutually exclusive with all other speculative paths because the wrapper
-    # bypasses mlx-lm BatchGenerator at decode time. Also exclusive with
-    # processor-backed settings (guided grammar, thinking budget, penalties)
-    # — see vlm_mtp_processor_conflicts().
+    # bypasses mlx-lm BatchGenerator at decode time. Guided grammar is also
+    # excluded; thinking budget and repetition / presence penalties are
+    # applied at verify time via MTPProcessingSampler — see
+    # vlm_mtp_processor_conflicts().
     vlm_mtp_enabled: bool = False
     vlm_mtp_draft_model: Optional[str] = (
         None  # Path / model id of the assistant drafter
@@ -539,13 +534,14 @@ class ModelSettings:
                         f"vlm_mtp_enabled and {name} cannot both be True; "
                         "choose one speculative path per model"
                     )
-            # Grammar / penalty defaults materialize as per-request logits
-            # processors, which the vlm_mtp decode path cannot apply —
+            # A guided-grammar default materializes as a stateful logits
+            # processor, which the vlm_mtp decode path cannot rewind —
             # every request would fall back to BatchGenerator and the
             # toggle would silently never engage (#2399). Reject the combo
             # at construction time like the speculative-path conflicts
-            # above. Thinking budget is exempt: it is applied at verify
-            # time via MTPProcessingSampler.
+            # above. Thinking budget and repetition / presence penalties
+            # are exempt: they are applied at verify time via
+            # MTPProcessingSampler.
             processor_conflicts = vlm_mtp_processor_conflicts(self.to_dict())
             if processor_conflicts:
                 raise ValueError(

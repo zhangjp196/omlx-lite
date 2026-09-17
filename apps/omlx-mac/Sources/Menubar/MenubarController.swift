@@ -9,13 +9,9 @@
 //   • Models          (per-model submenu)
 //   • System Stats     (CPU/GPU/Memory submenu)
 //   • Serving Stats     (Session + All-Time submenu)
-//   • Menu Bar         (menubar-item prefs: LIV/AVG/ALL, CPU/GPU/MEM,
-//                        refresh interval, dock icon, model scope, restore)
 //   • Open Web Dashboard (enabled when running — opens the web admin
 //                        dashboard in the browser via /admin/auto-login)
 //   • Chat with oMLX    (enabled when running — opens /admin/chat in browser)
-//   • Settings…         (Cmd-, — opens the web admin in the browser via the
-//                        openSettings callback; enabled when running)
 //   • About oMLX
 //   • Quit oMLX       (Cmd-Q)
 //
@@ -30,11 +26,6 @@ import SwiftUI
 @MainActor
 final class MenubarController: NSObject {
 
-    /// Posted by the Menu Bar submenu's "Restore Menu Bar Icon" item. The
-    /// status item can only be rebuilt from here, so the request travels as
-    /// a notification like the rest of the settings → menubar plumbing.
-    static let restoreIconRequestNotification = Notification.Name("OMLXMenubarRestoreIconRequest")
-
     // MARK: - Inputs / state
 
     private let server: ServerProcess?
@@ -43,17 +34,10 @@ final class MenubarController: NSObject {
     private let bootstrapError: Error?
     private let client: OMLXClient?
     private let openModelSettings: (String) -> Void
-    private let openSettings: () -> Void
     private let requestQuit: () -> Void
 
     private var statusItem: NSStatusItem
     private let menu = NSMenu()
-
-    /// Shared throughput model + the optional LIV/AVG/ALL status items it
-    /// feeds. The store outlives poller re-points (port changes) so the
-    /// popover graphs keep their history.
-    private let metricsStore = MenubarMetricsStore()
-    private var metricItemsController: MenubarMetricItemsController!
 
     private var statsPoller: MenubarStatsPoller?
     /// Endpoint the live `statsPoller` was started against, so a runtime
@@ -85,7 +69,8 @@ final class MenubarController: NSObject {
     private var systemStatsParentItem: NSMenuItem!
     private var systemStatsSubmenu: NSMenu!
     private let systemStatsSampler = SystemStatsSampler()
-    private var systemItemsController: SystemMenubarItemsController!
+    /// Fixed sampling cadence for the System Stats submenu panels.
+    private let systemStatsRefreshInterval: TimeInterval = 1.0
     private var systemStatsTimer: Timer?
     private var systemStatsTimerInterval: TimeInterval = 0
     private var systemStatsSubmenuOpen = false
@@ -93,12 +78,9 @@ final class MenubarController: NSObject {
     private var cpuPanelHost: NSHostingView<AnyView>?
     private var gpuPanelHost: NSHostingView<AnyView>?
     private var memoryPanelHost: NSHostingView<AnyView>?
-    private var adminPanelItem: NSMenuItem!
     private var webAdminItem: NSMenuItem!
     private var chatItem: NSMenuItem!
     private var updateItem: NSMenuItem!
-    private var menuBarParentItem: NSMenuItem!
-    private var menuBarSubmenu: NSMenu!
 
     private let iconOutline: NSImage?
     private let iconFilled: NSImage?
@@ -112,7 +94,6 @@ final class MenubarController: NSObject {
         lastError: Error? = nil,
         client: OMLXClient? = nil,
         openModelSettings: @escaping (String) -> Void = { _ in },
-        openSettings: @escaping () -> Void = {},
         requestQuit: @escaping () -> Void = { NSApp.terminate(nil) }
     ) {
         self.server = server
@@ -121,7 +102,6 @@ final class MenubarController: NSObject {
         self.bootstrapError = lastError
         self.client = client
         self.openModelSettings = openModelSettings
-        self.openSettings = openSettings
         self.requestQuit = requestQuit
 
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -160,39 +140,8 @@ final class MenubarController: NSObject {
         menu.autoenablesItems = false
         menu.delegate = self
 
-        metricItemsController = MenubarMetricItemsController(
-            store: metricsStore,
-            openDashboard: { [weak self] in
-                self?.openWebAdmin()
-            }
-        )
-        systemItemsController = SystemMenubarItemsController()
-        metricItemsController.willShowPopover = { [weak self] in
-            self?.systemItemsController.closeAllPopovers()
-        }
-        systemItemsController.willShowPopover = { [weak self] in
-            self?.metricItemsController.closeAllPopovers()
-        }
-
         buildMenu()
         refreshMenuState()
-
-        // Appearance toggles are written by the settings screen (and only
-        // read here); the defaults notification is the one propagation path
-        // that also works while the server is down and the poller is silent.
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(defaultsDidChange(_:)),
-            name: UserDefaults.didChangeNotification,
-            object: UserDefaults.standard
-        )
-
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(restoreIconRequested(_:)),
-            name: MenubarController.restoreIconRequestNotification,
-            object: nil
-        )
 
         if let server {
             NotificationCenter.default.addObserver(
@@ -219,7 +168,6 @@ final class MenubarController: NSObject {
 
         startStatsPoller()
         startVisibilityWatcher()
-        applyMetricPreferences()
 
         if let bootstrapError {
             DispatchQueue.main.async { [weak self] in
@@ -308,17 +256,6 @@ final class MenubarController: NSObject {
         rebuildStatsSubmenu()
         rebuildModelsSubmenu()
 
-        menuBarParentItem = item(String(localized: "menubar.item.menu_bar",
-                                        defaultValue: "Menu Bar",
-                                        comment: "Menubar parent item opening the menubar item preferences submenu"),
-                                 action: nil,
-                                 symbol: "menubar.rectangle")
-        menuBarSubmenu = NSMenu()
-        menuBarSubmenu.autoenablesItems = false
-        menuBarParentItem.submenu = menuBarSubmenu
-        buildMenuBarSubmenu()
-        menu.addItem(menuBarParentItem)
-
         menu.addItem(.separator())
 
         webAdminItem = item(String(localized: "menubar.item.web_dashboard",
@@ -340,17 +277,9 @@ final class MenubarController: NSObject {
         updateItem = item(String(localized: "menubar.item.update_available",
                                  defaultValue: "Install Update…",
                                  comment: "Menubar item shown when an app update is available"),
-                          action: #selector(installUpdate),
-                          symbol: "arrow.down.circle")
+                           action: #selector(installUpdate),
+                           symbol: "arrow.down.circle")
         menu.addItem(updateItem)
-
-        adminPanelItem = item(String(localized: "menubar.item.settings",
-                                     defaultValue: "Settings…",
-                                     comment: "Menubar item that opens the web admin in the browser"),
-                              action: #selector(openAdminPanel),
-                              symbol: "gearshape",
-                              keyEquivalent: ",")
-        menu.addItem(adminPanelItem)
 
         let about = item(String(localized: "menubar.item.about",
                                 defaultValue: "About oMLX",
@@ -424,10 +353,9 @@ final class MenubarController: NSObject {
 
         modelsParentItem.isEnabled = isRunning
 
-        // Settings / Web Dashboard / Chat all open browser URLs against the
-        // live port, so they stay gated on a healthy running server.
+        // Web Dashboard / Chat both open browser URLs against the live
+        // port, so they stay gated on a healthy running server.
         let availability = MenubarController.menuAvailability(for: state)
-        adminPanelItem.isEnabled = availability.settings
         webAdminItem.isEnabled = availability.webDashboard
         chatItem.isEnabled = availability.chat
 
@@ -529,7 +457,7 @@ final class MenubarController: NSObject {
         systemStatsSubmenu.removeAllItems()
 
         let snapshot = SystemStatsSnapshot()
-        let interval = MenubarMetricPrefs.refreshInterval
+        let interval = systemStatsRefreshInterval
         let cpu = NSHostingView(rootView: AnyView(
             CPUStatsPanel(snapshot: snapshot, refreshInterval: interval).omlxThemed()
         ))
@@ -558,18 +486,17 @@ final class MenubarController: NSObject {
         return item
     }
 
-    /// One sampler timer serves both consumers: the System Stats submenu
-    /// panels (while open) and the CPU/GPU/MEM status items (while any is
-    /// enabled). It runs only when at least one consumer needs it, and joins
-    /// the common run-loop modes because menu tracking parks the main run
-    /// loop in the event-tracking mode, where default-mode timers (and
-    /// main-queue hops) never fire.
+    /// One sampler timer serves the System Stats submenu panels (while
+    /// open). It runs only when the submenu needs it, and joins the common
+    /// run-loop modes because menu tracking parks the main run loop in the
+    /// event-tracking mode, where default-mode timers (and main-queue hops)
+    /// never fire.
     private var needsSystemSampling: Bool {
-        systemStatsSubmenuOpen || MenubarMetricPrefs.enabledSystemItems.any
+        systemStatsSubmenuOpen
     }
 
     private func reconcileSystemSampling() {
-        let interval = MenubarMetricPrefs.refreshInterval
+        let interval = systemStatsRefreshInterval
         if needsSystemSampling {
             if systemStatsTimer == nil || systemStatsTimerInterval != interval {
                 startSystemSamplingTimer(interval: interval)
@@ -605,11 +532,10 @@ final class MenubarController: NSObject {
         if systemStatsSubmenuOpen {
             updateSystemStatsPanels(with: snapshot)
         }
-        systemItemsController.apply(snapshot)
     }
 
     private func updateSystemStatsPanels(with snapshot: SystemStatsSnapshot) {
-        let interval = MenubarMetricPrefs.refreshInterval
+        let interval = systemStatsRefreshInterval
         cpuPanelHost?.rootView = AnyView(
             CPUStatsPanel(snapshot: snapshot, refreshInterval: interval).omlxThemed()
         )
@@ -626,153 +552,6 @@ final class MenubarController: NSObject {
                 host.frame.size = fitting
             }
         }
-    }
-
-    // MARK: - Menu Bar prefs submenu
-
-    /// Rebuilds the "Menu Bar" submenu: LIV/AVG/ALL + CPU/GPU/MEM toggles,
-    /// refresh interval, Dock icon, model library scope, and the status
-    /// icon restore. Rebuilt on every main-menu open so checkmarks track
-    /// UserDefaults.
-    private func buildMenuBarSubmenu() {
-        menuBarSubmenu.removeAllItems()
-
-        menuBarSubmenu.addItem(boolPrefItem(
-            title: String(localized: "menubar.prefs.live_activity",
-                         defaultValue: "Live Activity",
-                         comment: "Menu Bar prefs item toggling the LIV status item"),
-            key: MenubarMetricPrefs.liveKey,
-            symbol: "bolt"
-        ))
-        menuBarSubmenu.addItem(boolPrefItem(
-            title: String(localized: "menubar.prefs.average_activity",
-                         defaultValue: "Average Activity",
-                         comment: "Menu Bar prefs item toggling the AVG status item"),
-            key: MenubarMetricPrefs.averageKey,
-            symbol: "chart.line.uptrend.xyaxis"
-        ))
-        menuBarSubmenu.addItem(boolPrefItem(
-            title: String(localized: "menubar.prefs.alltime_activity",
-                         defaultValue: "All-Time Activity",
-                         comment: "Menu Bar prefs item toggling the ALL status item"),
-            key: MenubarMetricPrefs.alltimeKey,
-            symbol: "hourglass"
-        ))
-        menuBarSubmenu.addItem(.separator())
-
-        menuBarSubmenu.addItem(boolPrefItem(
-            title: String(localized: "menubar.prefs.cpu_usage",
-                         defaultValue: "CPU Usage",
-                         comment: "Menu Bar prefs item toggling the CPU status item"),
-            key: MenubarMetricPrefs.cpuItemKey,
-            symbol: "cpu"
-        ))
-        menuBarSubmenu.addItem(boolPrefItem(
-            title: String(localized: "menubar.prefs.gpu_usage",
-                         defaultValue: "GPU Usage",
-                         comment: "Menu Bar prefs item toggling the GPU status item"),
-            key: MenubarMetricPrefs.gpuItemKey,
-            symbol: "display"
-        ))
-        menuBarSubmenu.addItem(boolPrefItem(
-            title: String(localized: "menubar.prefs.memory_usage",
-                         defaultValue: "Memory Usage",
-                         comment: "Menu Bar prefs item toggling the Memory status item"),
-            key: MenubarMetricPrefs.memoryItemKey,
-            symbol: "memorychip"
-        ))
-        menuBarSubmenu.addItem(.separator())
-
-        let refreshParent = item(String(localized: "menubar.prefs.refresh_interval",
-                                        defaultValue: "Refresh Interval",
-                                        comment: "Menu Bar prefs parent item opening the refresh interval submenu"),
-                                 action: nil,
-                                 symbol: "timer")
-        let refreshSub = NSMenu()
-        refreshSub.autoenablesItems = false
-        let currentInterval = MenubarMetricPrefs.refreshInterval
-        for choice in MenubarMetricPrefs.refreshIntervalChoices {
-            let choiceItem = NSMenuItem(
-                title: String(localized: "menubar.prefs.refresh_choice",
-                              defaultValue: "Every \(String(format: "%.1f", choice))s",
-                              comment: "Refresh interval choice; placeholder is the interval in seconds"),
-                action: #selector(setRefreshInterval(_:)),
-                keyEquivalent: ""
-            )
-            choiceItem.target = self
-            choiceItem.representedObject = choice
-            choiceItem.state = (choice == currentInterval) ? .on : .off
-            refreshSub.addItem(choiceItem)
-        }
-        refreshParent.submenu = refreshSub
-        menuBarSubmenu.addItem(refreshParent)
-        menuBarSubmenu.addItem(.separator())
-
-        menuBarSubmenu.addItem(boolPrefItem(
-            title: String(localized: "menubar.prefs.show_dock_icon",
-                         defaultValue: "Show Dock Icon",
-                         comment: "Menu Bar prefs item keeping the Dock icon permanently visible"),
-            key: MenubarMetricPrefs.showDockIconKey,
-            symbol: "app.badge"
-        ))
-
-        let libraryParent = item(String(localized: "menubar.prefs.model_library",
-                                        defaultValue: "Model Library",
-                                        comment: "Menu Bar prefs parent item opening the model library scope submenu"),
-                                 action: nil,
-                                 symbol: "folder")
-        let librarySub = NSMenu()
-        librarySub.autoenablesItems = false
-        let currentScope = MenubarMetricPrefs.modelLibraryScope
-        for scope in MenuBarModelScope.allCases {
-            let scopeItem = NSMenuItem(
-                title: scope.menuTitle,
-                action: #selector(setModelLibraryScope(_:)),
-                keyEquivalent: ""
-            )
-            scopeItem.target = self
-            scopeItem.representedObject = scope.rawValue
-            scopeItem.state = (scope == currentScope) ? .on : .off
-            librarySub.addItem(scopeItem)
-        }
-        libraryParent.submenu = librarySub
-        menuBarSubmenu.addItem(libraryParent)
-        menuBarSubmenu.addItem(.separator())
-
-        menuBarSubmenu.addItem(item(String(localized: "menubar.prefs.restore_icon",
-                                           defaultValue: "Restore Menu Bar Icon",
-                                           comment: "Menu Bar prefs item that repairs and rebuilds the status item"),
-                                    action: #selector(restoreIconAction),
-                                    symbol: "circle.lefthalf.filled"))
-    }
-
-    private func boolPrefItem(title: String, key: String, symbol: String) -> NSMenuItem {
-        let it = item(title, action: #selector(toggleMenuPref(_:)), symbol: symbol)
-        it.representedObject = key
-        it.state = UserDefaults.standard.bool(forKey: key) ? .on : .off
-        return it
-    }
-
-    @objc private func toggleMenuPref(_ sender: NSMenuItem) {
-        guard let key = sender.representedObject as? String else { return }
-        let current = UserDefaults.standard.bool(forKey: key)
-        UserDefaults.standard.set(!current, forKey: key)
-    }
-
-    @objc private func setRefreshInterval(_ sender: NSMenuItem) {
-        guard let choice = sender.representedObject as? Double else { return }
-        UserDefaults.standard.set(choice, forKey: MenubarMetricPrefs.refreshIntervalKey)
-    }
-
-    @objc private func setModelLibraryScope(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String,
-              MenuBarModelScope(rawValue: raw) != nil
-        else { return }
-        UserDefaults.standard.set(raw, forKey: MenubarMetricPrefs.modelLibraryScopeKey)
-    }
-
-    @objc private func restoreIconAction() {
-        NotificationCenter.default.post(name: MenubarController.restoreIconRequestNotification, object: nil)
     }
 
     private func rebuildStatsSubmenu() {
@@ -891,7 +670,6 @@ final class MenubarController: NSObject {
             name: MenubarStatsPoller.didUpdateNotification,
             object: p
         )
-        p.setEnabledMetrics(MenubarMetricPrefs.enabledMetrics)
         p.start()
         self.statsPoller = p
         self.statsPollerBaseURL = baseURL
@@ -950,11 +728,9 @@ final class MenubarController: NSObject {
             unloadingIDs.removeAll()
             loadingIDs.removeAll()
             modelsFetched = false
-            metricsStore.markServerStopped()
         default:
             break
         }
-        metricItemsController.sync()
 
         if case .failed(let message) = server.state,
            MenubarController.shouldShowGenericFailureAlert(message: message) {
@@ -975,23 +751,6 @@ final class MenubarController: NSObject {
            let lastStatusSuccessAt = poller.lastStatusSuccessAt {
             server?.recordAuxiliaryHealthSuccess(at: lastStatusSuccessAt)
         }
-        // A failure tick (server going away) posts once with stale snapshots
-        // still cached — surface it as unknown ("–") rather than freezing
-        // the last good numbers on the glyphs.
-        let tickOK = statsPoller?.lastTickWasSuccess ?? false
-        metricsStore.applyTick(
-            live: tickOK
-                ? MenubarMetricsStore.liveRates(from: statsPoller?.liveStats)
-                : nil,
-            average: tickOK
-                ? MenubarMetricsStore.averageRates(from: statsPoller?.sessionStats)
-                : nil,
-            alltime: tickOK
-                ? MenubarMetricsStore.averageRates(from: statsPoller?.alltimeStats)
-                : nil,
-            serverRunning: serverIsRunning && tickOK
-        )
-        metricItemsController.sync()
         // Stats only need to redraw if the submenu is open or about to open;
         // menuWillOpen (NSMenuDelegate) handles the latter, so for now we
         // rebuild eagerly — the next render will pick up fresh values.
@@ -1001,40 +760,6 @@ final class MenubarController: NSObject {
 
     @objc private func updateStateChanged(_ note: Notification) {
         refreshUpdateMenuItem()
-    }
-
-    /// Appearance > Menu Bar Icon > Restore. Repairs the StatusKit approval
-    /// and rebuilds the status item in one shot — the launch-time watcher
-    /// only ever offers this once per process, and a menu bar manager or a
-    /// probe that reads the item as visible suppresses it entirely, so this
-    /// is the reachable path once the icon is already gone (#2368).
-    @objc private func restoreIconRequested(_ note: Notification) {
-        MenubarIconRecovery.restore { [weak self] in
-            _ = self?.recreateStatusItem()
-            self?.metricItemsController.rebuild()
-            self?.systemItemsController.rebuild()
-        }
-    }
-
-    /// UserDefaults writes can come from any thread; hop to the main actor
-    /// before touching the poller or the status items.
-    @objc nonisolated private func defaultsDidChange(_ note: Notification) {
-        Task { @MainActor in
-            self.applyMetricPreferences()
-        }
-    }
-
-    /// Pushes the current Appearance toggles into the poller and reconciles
-    /// every optional status item plus the system sampling timer. Cheap and
-    /// idempotent: the poller guards on equality, sync() only re-rasterizes
-    /// on signature changes, and the reconcile is a nil-check when nothing
-    /// flipped — so the chattiness of the defaults notification doesn't
-    /// matter.
-    private func applyMetricPreferences() {
-        statsPoller?.setEnabledMetrics(MenubarMetricPrefs.enabledMetrics)
-        metricItemsController.sync()
-        systemItemsController.sync()
-        reconcileSystemSampling()
     }
 
     // MARK: - Actions
@@ -1147,10 +872,6 @@ final class MenubarController: NSObject {
         }
     }
 
-    @objc private func openAdminPanel() {
-        openSettings()
-    }
-
     @objc private func openWebAdmin() {
         guard serverIsRunning else { return }
         let host = MenubarController.displayHost(server: server, fallback: config.host)
@@ -1204,11 +925,8 @@ final class MenubarController: NSObject {
         }
 
         // Loaded models first, then unloaded favorites, then the rest of the
-        // library — deduplicated top-down, empty sections omitted. The
-        // Appearance scope pref can hide the library tail; loaded models
-        // always show since they are active either way.
+        // library — deduplicated top-down, empty sections omitted.
         let (loaded, favorites, library) = MenubarController.partitionForMenu(models)
-        let showLibrary = MenubarMetricPrefs.modelLibraryScope == .all
         var sections: [(header: String, group: [ModelDTO])] = [
             (String(localized: "menubar.models.section.loaded",
                     defaultValue: "Loaded",
@@ -1218,15 +936,11 @@ final class MenubarController: NSObject {
                     defaultValue: "Favorites",
                     comment: "Models submenu section header for favorite models that are not loaded"),
              favorites),
+            (String(localized: "menubar.models.section.library",
+                    defaultValue: "Library",
+                    comment: "Models submenu section header for the remaining model library"),
+             library),
         ]
-        if showLibrary {
-            sections.append(
-                (String(localized: "menubar.models.section.library",
-                        defaultValue: "Library",
-                        comment: "Models submenu section header for the remaining model library"),
-                 library)
-            )
-        }
 
         guard sections.contains(where: { !$0.group.isEmpty }) else {
             modelsSubmenu.addItem(disabled(String(
@@ -1505,7 +1219,6 @@ final class MenubarController: NSObject {
 
 extension MenubarController {
     struct MenuAvailability: Equatable {
-        let settings: Bool
         let webDashboard: Bool
         let chat: Bool
     }
@@ -1518,7 +1231,6 @@ extension MenubarController {
             browserItemsEnabled = false
         }
         return MenuAvailability(
-            settings: browserItemsEnabled,
             webDashboard: browserItemsEnabled,
             chat: browserItemsEnabled
         )
@@ -1638,14 +1350,10 @@ extension MenubarController: NSMenuDelegate {
             systemSamplingTick()
             return
         }
-        // One menubar dropdown at a time — the metric popovers don't dismiss
-        // on a click that lands on our own main status item.
-        metricItemsController.closeAllPopovers()
-        systemItemsController.closeAllPopovers()
+        // One menubar dropdown at a time.
         refreshMenuState()
         rebuildStatsSubmenu()
         rebuildModelsSubmenu()
-        buildMenuBarSubmenu()
         scheduleModelsRefresh()
     }
 

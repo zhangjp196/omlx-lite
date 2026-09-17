@@ -658,10 +658,10 @@ def build_venvstacks():
         print("\n  Resolving git requirements to local wheel paths...")
         _create_resolved_toml(version_map, resolved_toml)
 
-    # Local wheels args
-    local_wheels_args = []
-    if WHEELS_DIR.exists() and any(WHEELS_DIR.glob("*.whl")):
-        local_wheels_args = ["--local-wheels", str(WHEELS_DIR)]
+    # Local wheels args — always passed: _lock_with_sdist_retry() builds
+    # sdist-only wheels into WHEELS_DIR *during* the lock, so the lock command
+    # must reference the directory or the retries can never see the wheels.
+    local_wheels_args = ["--local-wheels", str(WHEELS_DIR)]
 
     # Step 3: Lock environments (always re-lock to match current wheels)
     # If lock fails due to sdist-only packages (no pre-built wheel on PyPI),

@@ -255,7 +255,6 @@ class ServerState:
     process_memory_enforcer: Optional[object] = None  # ProcessMemoryEnforcer
     responses_store: ResponseStore = field(default_factory=ResponseStore)
     oq_manager: Optional[object] = None  # OQManager
-    hf_uploader: Optional[object] = None  # HFUploader
     # False while the startup pinned-model preload is still running.
     # /health returns 503 with status "loading" until it flips to True so
     # port watchdogs see liveness instead of a closed port (#2184).
@@ -3591,6 +3590,88 @@ def _remote_effective_params(
     return max_tokens, temperature, top_p
 
 
+def _build_remote_usage(
+    raw: dict[str, Any] | None,
+    *,
+    prompt_tokens: int,
+    completion_tokens: int,
+    prefill_duration: float,
+    generation_duration: float,
+    total_time: float,
+    ttft: float | None,
+) -> Usage:
+    """Build a Usage for a proxied remote completion.
+
+    Upstream timing metrics are forwarded when the remote endpoint reports them
+    (e.g. another omlx instance); otherwise they are derived from the timings
+    measured while proxying the request. Without this the chat performance
+    panel has no prefill/generation TPS to show for remote models.
+    """
+    raw = raw or {}
+
+    def _float(key: str) -> float | None:
+        value = raw.get(key)
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _positive(value: float | None) -> float | None:
+        return value if value is not None and value > 0 else None
+
+    upstream_prefill = _positive(_float("prompt_eval_duration"))
+    upstream_gen = _positive(_float("generation_duration"))
+    effective_prefill = upstream_prefill or prefill_duration
+    effective_gen = upstream_gen or generation_duration
+
+    ptps = _float("prompt_tokens_per_second")
+    if ptps is None and effective_prefill > 0:
+        ptps = round(prompt_tokens / effective_prefill, 2)
+
+    gtps = _float("generation_tokens_per_second")
+    if gtps is None and effective_gen > 0:
+        gtps = round(completion_tokens / effective_gen, 2)
+
+    upstream_ttft = _float("time_to_first_token")
+    if upstream_ttft is None:
+        upstream_ttft = ttft if ttft is not None else prefill_duration
+
+    total_tokens = raw.get("total_tokens")
+    try:
+        total_tokens = int(total_tokens) if total_tokens is not None else None
+    except (TypeError, ValueError):
+        total_tokens = None
+
+    cached_tokens = None
+    details = raw.get("prompt_tokens_details")
+    if isinstance(details, dict) and details.get("cached_tokens") is not None:
+        try:
+            cached_tokens = int(details["cached_tokens"])
+        except (TypeError, ValueError):
+            cached_tokens = None
+
+    upstream_total = _float("total_time")
+
+    return Usage(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens if total_tokens is not None else prompt_tokens + completion_tokens,
+        prompt_tokens_details=(
+            PromptTokensDetails(cached_tokens=cached_tokens)
+            if cached_tokens is not None
+            else None
+        ),
+        time_to_first_token=round(upstream_ttft, 2) if upstream_ttft is not None else None,
+        total_time=round(upstream_total if upstream_total is not None else total_time, 2),
+        prompt_eval_duration=round(effective_prefill, 2) if effective_prefill > 0 else None,
+        generation_duration=round(effective_gen, 2) if effective_gen > 0 else None,
+        prompt_tokens_per_second=ptps,
+        generation_tokens_per_second=gtps,
+    )
+
+
 async def _create_remote_chat_completion(
     request: ChatCompletionRequest,
     remote_config: Any,
@@ -3621,6 +3702,7 @@ async def _create_remote_chat_completion(
             headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
         )
 
+    start_time = time.perf_counter()
     try:
         result = await client.chat(
             messages, max_tokens=max_tokens, temperature=temperature, top_p=top_p
@@ -3629,6 +3711,7 @@ async def _create_remote_chat_completion(
         raise HTTPException(status_code=502, detail=exc.detail) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"Remote endpoint unreachable: {exc}") from exc
+    total_duration = time.perf_counter() - start_time
 
     try:
         choice = (result.get("choices") or [{}])[0]
@@ -3636,6 +3719,8 @@ async def _create_remote_chat_completion(
         content = message.get("content")
         reasoning = message.get("reasoning_content") or message.get("reasoning")
         usage = result.get("usage") or {}
+        prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
+        completion_tokens = int(usage.get("completion_tokens", 0) or 0)
         payload = ChatCompletionResponse(
             model=display_model,
             choices=[
@@ -3647,10 +3732,16 @@ async def _create_remote_chat_completion(
                     finish_reason=choice.get("finish_reason") or "stop",
                 )
             ],
-            usage=Usage(
-                prompt_tokens=int(usage.get("prompt_tokens", 0) or 0),
-                completion_tokens=int(usage.get("completion_tokens", 0) or 0),
-                total_tokens=int(usage.get("total_tokens", 0) or 0),
+            usage=_build_remote_usage(
+                usage,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                # A non-streaming response cannot be split into prefill and
+                # decode, so only end-to-end timing is attributable here.
+                prefill_duration=0.0,
+                generation_duration=total_duration,
+                total_time=total_duration,
+                ttft=None,
             ),
         ).model_dump_json(exclude_none=True)
     finally:
@@ -3669,6 +3760,11 @@ async def _remote_stream_chat(
     top_p: float | None,
 ) -> AsyncIterator[str]:
     """Translate a remote endpoint's SSE stream into omlx OpenAI chunks."""
+    start_time = time.perf_counter()
+    first_token_time: float | None = None
+    usage: dict[str, Any] | None = None
+    finish_reason = "stop"
+
     first_chunk = ChatCompletionChunk(
         id=response_id,
         model=display_model,
@@ -3676,7 +3772,6 @@ async def _remote_stream_chat(
     )
     yield f"data: {first_chunk.model_dump_json(exclude_none=True)}\n\n"
 
-    usage = None
     try:
         async for raw in client.stream(
             messages, max_tokens=max_tokens, temperature=temperature, top_p=top_p
@@ -3684,9 +3779,13 @@ async def _remote_stream_chat(
             if raw.get("usage"):
                 usage = raw["usage"]
             for choice in raw.get("choices") or []:
+                if choice.get("finish_reason"):
+                    finish_reason = choice["finish_reason"]
                 delta = choice.get("delta") or {}
                 content = delta.get("content")
                 if content:
+                    if first_token_time is None:
+                        first_token_time = time.perf_counter()
                     chunk = ChatCompletionChunk(
                         id=response_id,
                         model=display_model,
@@ -3697,6 +3796,8 @@ async def _remote_stream_chat(
                     yield f"data: {chunk.model_dump_json(exclude_none=True)}\n\n"
                 reasoning = delta.get("reasoning_content") or delta.get("reasoning")
                 if reasoning:
+                    if first_token_time is None:
+                        first_token_time = time.perf_counter()
                     chunk = ChatCompletionChunk(
                         id=response_id,
                         model=display_model,
@@ -3707,6 +3808,7 @@ async def _remote_stream_chat(
                         ],
                     )
                     yield f"data: {chunk.model_dump_json(exclude_none=True)}\n\n"
+        end_time = time.perf_counter()
     except RemoteChatError as exc:
         error_data = {"error": {"message": exc.detail, "type": "remote_error"}}
         yield f"data: {json.dumps(error_data)}\n\n"
@@ -3715,25 +3817,41 @@ async def _remote_stream_chat(
     finally:
         await client.aclose()
 
-    if usage:
-        final_usage = Usage(
-            prompt_tokens=int(usage.get("prompt_tokens", 0) or 0),
-            completion_tokens=int(usage.get("completion_tokens", 0) or 0),
-            total_tokens=int(usage.get("total_tokens", 0) or 0),
-        )
-    else:
-        final_usage = None
+    total_duration = end_time - start_time
+    ttft = (first_token_time - start_time) if first_token_time is not None else None
+    generation_duration = (end_time - first_token_time) if first_token_time is not None else 0.0
+
     final_chunk = ChatCompletionChunk(
         id=response_id,
         model=display_model,
         choices=[
             ChatCompletionChunkChoice(
-                delta=ChatCompletionChunkDelta(), finish_reason="stop"
+                delta=ChatCompletionChunkDelta(), finish_reason=finish_reason
             )
         ],
-        usage=final_usage,
     )
     yield f"data: {final_chunk.model_dump_json(exclude_none=True)}\n\n"
+
+    if usage:
+        prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
+        completion_tokens = int(usage.get("completion_tokens", 0) or 0)
+        # Usage rides a choices:[] chunk (OpenAI spec) so clients — including
+        # the built-in chat UI — pick up token counts and timing metrics.
+        usage_chunk = ChatCompletionChunk(
+            id=response_id,
+            model=display_model,
+            choices=[],
+            usage=_build_remote_usage(
+                usage,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                prefill_duration=ttft if ttft is not None else total_duration,
+                generation_duration=generation_duration,
+                total_time=total_duration,
+                ttft=ttft,
+            ),
+        )
+        yield f"data: {usage_chunk.model_dump_json(exclude_none=True)}\n\n"
     yield "data: [DONE]\n\n"
 
 

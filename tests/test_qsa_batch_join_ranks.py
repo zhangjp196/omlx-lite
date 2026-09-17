@@ -25,11 +25,14 @@ import pytest
 
 mx = pytest.importorskip("mlx.core")
 
+from _qwen4_vendor import skip_if_unavailable  # noqa: E402
+
 from omlx.patches.mlx_vlm_qwen4_exp_compat import (  # noqa: E402
     apply_mlx_vlm_qwen4_exp_compat_patch,
 )
 
 apply_mlx_vlm_qwen4_exp_compat_patch()
+skip_if_unavailable()
 
 from mlx_vlm.models.qwen4_exp.language import (  # noqa: E402
     BatchQSAKVCache,

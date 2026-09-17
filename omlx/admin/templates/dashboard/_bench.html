@@ -28,14 +28,6 @@
                         class="px-5 py-2.5 rounded-full text-sm font-medium transition-all duration-200">
                         {{ t('navbar.dropdown.accuracy') }}
                     </button>
-                    <button
-                        @click="setBenchTab('context')"
-                        :class="benchTab === 'context'
-                            ? 'bg-neutral-900 text-white'
-                            : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'"
-                        class="px-5 py-2.5 rounded-full text-sm font-medium transition-all duration-200">
-                        {{ t('navbar.dropdown.context') }}
-                    </button>
                 </div>
 
                 <!-- Throughput tab -->
@@ -48,14 +40,6 @@
                                 <h2 class="text-xs font-bold uppercase tracking-widest text-neutral-400 mb-2">{{ t('bench.section_label') }}</h2>
                                 <h3 class="text-2xl font-bold tracking-tight text-neutral-900">{{ t('bench.heading') }}</h3>
                             </div>
-                            <a x-show="benchDeviceInfo?.owner_hash"
-                               x-cloak
-                               :href="'https://omlx.ai/my/' + benchDeviceInfo?.owner_hash"
-                               target="_blank"
-                               class="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-neutral-600 bg-neutral-100 rounded-lg hover:bg-neutral-200 hover:text-neutral-900 transition-all">
-                                <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
-                                My Submissions
-                            </a>
                         </div>
                         <p class="text-sm text-neutral-500 mt-2">{{ t('bench.description') }}</p>
                     </div>
@@ -97,17 +81,105 @@
                         </div>
 
                         <div class="px-6 py-5 space-y-5">
-                            <!-- Model Selector -->
-                            <div>
-                                <label class="block text-sm font-medium text-neutral-700 mb-2">{{ t('bench.config.model') }}</label>
-                                <select x-model="benchModelId"
-                                        :disabled="benchRunning || benchExternalEnabled"
-                                        class="w-full max-w-md px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:ring-2 focus:ring-neutral-900 focus:border-transparent bg-white disabled:opacity-50">
-                                    <option value="">{{ t('bench.config.model_placeholder') }}</option>
-                                    <template x-for="m in models.filter(m => m.model_type === 'llm' || m.model_type === 'vlm' || !m.model_type)" :key="m.id">
-                                        <option :value="m.id" x-text="m.id + ' (' + (m.estimated_size ? (m.estimated_size / 1073741824).toFixed(1) + ' GB' : 'unknown') + ')'"></option>
-                                    </template>
-                                </select>
+                            <!-- Model Source Tabs -->
+                            <div class="flex rounded-lg border border-neutral-200 overflow-hidden w-fit">
+                                <button type="button"
+                                        @click="benchExternalEnabled = false"
+                                        :disabled="benchRunning"
+                                        :class="!benchExternalEnabled ? 'bg-neutral-900 text-white' : 'bg-white text-neutral-500 hover:bg-neutral-50'"
+                                        class="px-4 py-2 text-sm font-medium transition-all flex items-center gap-1.5 disabled:opacity-50">
+                                    <i data-lucide="cpu" class="w-4 h-4"></i>
+                                    {{ t('bench.config.source_local') }}
+                                </button>
+                                <button type="button"
+                                        @click="benchExternalEnabled = true"
+                                        :disabled="benchRunning"
+                                        :class="benchExternalEnabled ? 'bg-neutral-900 text-white' : 'bg-white text-neutral-500 hover:bg-neutral-50'"
+                                        class="px-4 py-2 text-sm font-medium transition-all flex items-center gap-1.5 border-l border-neutral-200 disabled:opacity-50">
+                                    <i data-lucide="cloud" class="w-4 h-4"></i>
+                                    {{ t('bench.config.source_external') }}
+                                </button>
+                            </div>
+
+                            <!-- Local Model -->
+                            <div x-show="!benchExternalEnabled" x-cloak class="space-y-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-neutral-700 mb-2">{{ t('bench.config.model') }}</label>
+                                    <select x-model="benchModelId"
+                                            :disabled="benchRunning"
+                                            class="w-full max-w-md px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:ring-2 focus:ring-neutral-900 focus:border-transparent bg-white disabled:opacity-50">
+                                        <option value="">{{ t('bench.config.model_placeholder') }}</option>
+                                        <template x-for="m in models.filter(m => m.model_type === 'llm' || m.model_type === 'vlm' || !m.model_type)" :key="m.id">
+                                            <option :value="m.id" x-text="m.id + ' (' + (m.estimated_size ? (m.estimated_size / 1073741824).toFixed(1) + ' GB' : 'unknown') + ')'"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                                <label class="inline-flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox"
+                                           x-model="benchForceLmEngine"
+                                           :disabled="benchRunning"
+                                           class="mt-0.5 w-4 h-4 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900 disabled:opacity-50">
+                                    <span>
+                                        <span class="block text-sm font-medium text-neutral-700">{{ t('bench.config.force_lm_engine') }}</span>
+                                        <span class="block text-xs text-neutral-400 mt-1">{{ t('bench.config.force_lm_engine_hint') }}</span>
+                                    </span>
+                                </label>
+                                <label class="inline-flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox"
+                                           x-model="benchAlignPromptToAne"
+                                           :disabled="benchRunning"
+                                           class="mt-0.5 w-4 h-4 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900 disabled:opacity-50">
+                                    <span>
+                                        <span class="block text-sm font-medium text-neutral-700">{{ t('bench.config.ane_aligned_prompt') }}</span>
+                                        <span class="block text-xs text-neutral-400 mt-1">{{ t('bench.config.ane_aligned_prompt_hint') }}</span>
+                                    </span>
+                                </label>
+                            </div>
+
+                            <!-- External Model -->
+                            <div x-show="benchExternalEnabled" x-cloak class="space-y-3">
+                                <div>
+                                    <p class="text-sm font-medium text-neutral-700">{{ t('bench.config.external') }}</p>
+                                    <p class="text-xs text-neutral-400 mt-1">{{ t('bench.config.external_hint') }}</p>
+                                </div>
+                                <div x-show="remoteModels.length > 0" x-cloak class="flex items-center gap-2">
+                                    <label class="text-xs font-medium text-neutral-600 whitespace-nowrap">{{ t('bench.config.use_remote_model') }}</label>
+                                    <select @change="applyBenchRemoteModel($event.target.value)"
+                                            :disabled="benchRunning"
+                                            class="flex-1 max-w-md px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:ring-2 focus:ring-neutral-900 focus:border-transparent bg-white disabled:opacity-50">
+                                        <option value="">{{ t('bench.config.select_remote_model') }}</option>
+                                        <template x-for="rm in remoteModels.filter(m => m.enabled !== false)" :key="rm.id">
+                                            <option :value="rm.id" x-text="rm.display_name || rm.id"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-neutral-600 mb-1">{{ t('bench.config.external_base_url') }}</label>
+                                    <input type="url"
+                                           x-model="externalBaseUrl"
+                                           @change="saveExternalEndpoint()"
+                                           :disabled="benchRunning"
+                                           placeholder="https://api.openai.com/v1"
+                                           class="w-full max-w-md px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:ring-2 focus:ring-neutral-900 focus:border-transparent bg-white disabled:opacity-50">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-neutral-600 mb-1">{{ t('bench.config.external_api_key') }}</label>
+                                    <input type="password"
+                                           autocomplete="off"
+                                           x-model="externalApiKey"
+                                           @change="saveExternalEndpoint()"
+                                           :disabled="benchRunning"
+                                           class="w-full max-w-md px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:ring-2 focus:ring-neutral-900 focus:border-transparent bg-white disabled:opacity-50">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-neutral-600 mb-1">{{ t('bench.config.external_model') }}</label>
+                                    <input type="text"
+                                           x-model="externalModel"
+                                           @change="saveExternalEndpoint()"
+                                           :disabled="benchRunning"
+                                           placeholder="gpt-4o-mini"
+                                           class="w-full max-w-md px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:ring-2 focus:ring-neutral-900 focus:border-transparent bg-white disabled:opacity-50">
+                                </div>
                             </div>
 
                             <!-- Context Profile -->
@@ -140,16 +212,6 @@
                                     </template>
                                 </div>
                                 <p class="text-xs text-neutral-400 mt-1.5">{{ t('bench.config.generation_hint') }}</p>
-                                <label class="inline-flex items-start gap-2 cursor-pointer mt-3">
-                                    <input type="checkbox"
-                                           x-model="benchAlignPromptToAne"
-                                           :disabled="benchRunning"
-                                           class="mt-0.5 w-4 h-4 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900 disabled:opacity-50">
-                                    <span>
-                                        <span class="block text-sm font-medium text-neutral-700">{{ t('bench.config.ane_aligned_prompt') }}</span>
-                                        <span class="block text-xs text-neutral-400 mt-1">{{ t('bench.config.ane_aligned_prompt_hint') }}</span>
-                                    </span>
-                                </label>
                             </div>
 
                             <!-- Batch Config -->
@@ -167,86 +229,6 @@
                                     </template>
                                 </div>
                                 <p class="text-xs text-neutral-400 mt-1.5">{{ t('bench.config.batch_hint') }}</p>
-                            </div>
-
-                            <!-- Advanced Options -->
-                            <div class="pt-2 border-t border-neutral-100">
-                                <button type="button"
-                                        @click="benchAdvancedOptionsOpen = !benchAdvancedOptionsOpen"
-                                        :disabled="benchRunning"
-                                        :aria-expanded="benchAdvancedOptionsOpen.toString()"
-                                        class="flex items-center gap-2 text-sm font-medium text-neutral-600 hover:text-neutral-900 transition-colors disabled:opacity-50">
-                                    <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
-                                    <span>{{ t('bench.config.advanced_options') }}</span>
-                                    <i data-lucide="chevron-down"
-                                       class="w-4 h-4 text-neutral-400 transition-transform"
-                                       :class="benchAdvancedOptionsOpen && 'rotate-180'"></i>
-                                </button>
-                                <div x-show="benchAdvancedOptionsOpen" x-cloak class="mt-3 space-y-3">
-                                    <label class="inline-flex items-start gap-2 cursor-pointer">
-                                        <input type="checkbox"
-                                               x-model="benchForceLmEngine"
-                                               :disabled="benchRunning || benchExternalEnabled"
-                                               class="mt-0.5 w-4 h-4 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900 disabled:opacity-50">
-                                        <span>
-                                            <span class="block text-sm font-medium text-neutral-700">{{ t('bench.config.force_lm_engine') }}</span>
-                                            <span class="block text-xs text-neutral-400 mt-1">{{ t('bench.config.force_lm_engine_hint') }}</span>
-                                        </span>
-                                    </label>
-                                    <!-- External OpenAI-compatible endpoint -->
-                                    <div>
-                                        <label class="inline-flex items-start gap-2 cursor-pointer">
-                                            <input type="checkbox"
-                                                   x-model="benchExternalEnabled"
-                                                   :disabled="benchRunning"
-                                                   class="mt-0.5 w-4 h-4 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900 disabled:opacity-50">
-                                            <span>
-                                                <span class="block text-sm font-medium text-neutral-700">{{ t('bench.config.external') }}</span>
-                                                <span class="block text-xs text-neutral-400 mt-1">{{ t('bench.config.external_hint') }}</span>
-                                            </span>
-                                        </label>
-                                        <div x-show="benchExternalEnabled" x-cloak class="mt-3 space-y-3 pl-6">
-                                            <div x-show="remoteModels.length > 0" x-cloak class="flex items-center gap-2">
-                                                <label class="text-xs font-medium text-neutral-600 whitespace-nowrap">{{ t('bench.config.use_remote_model') }}</label>
-                                                <select @change="applyBenchRemoteModel($event.target.value)"
-                                                        :disabled="benchRunning"
-                                                        class="flex-1 max-w-md px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:ring-2 focus:ring-neutral-900 focus:border-transparent bg-white disabled:opacity-50">
-                                                    <option value="">{{ t('bench.config.select_remote_model') }}</option>
-                                                    <template x-for="rm in remoteModels.filter(m => m.enabled !== false)" :key="rm.id">
-                                                        <option :value="rm.id" x-text="rm.display_name || rm.id"></option>
-                                                    </template>
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <label class="block text-xs font-medium text-neutral-600 mb-1">{{ t('bench.config.external_base_url') }}</label>
-                                                <input type="url"
-                                                       x-model="externalBaseUrl"
-                                                       @change="saveExternalEndpoint()"
-                                                       :disabled="benchRunning"
-                                                       placeholder="https://api.openai.com/v1"
-                                                       class="w-full max-w-md px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:ring-2 focus:ring-neutral-900 focus:border-transparent bg-white disabled:opacity-50">
-                                            </div>
-                                            <div>
-                                                <label class="block text-xs font-medium text-neutral-600 mb-1">{{ t('bench.config.external_api_key') }}</label>
-                                                <input type="password"
-                                                       autocomplete="off"
-                                                       x-model="externalApiKey"
-                                                       @change="saveExternalEndpoint()"
-                                                       :disabled="benchRunning"
-                                                       class="w-full max-w-md px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:ring-2 focus:ring-neutral-900 focus:border-transparent bg-white disabled:opacity-50">
-                                            </div>
-                                            <div>
-                                                <label class="block text-xs font-medium text-neutral-600 mb-1">{{ t('bench.config.external_model') }}</label>
-                                                <input type="text"
-                                                       x-model="externalModel"
-                                                       @change="saveExternalEndpoint()"
-                                                       :disabled="benchRunning"
-                                                       placeholder="gpt-4o-mini"
-                                                       class="w-full max-w-md px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:ring-2 focus:ring-neutral-900 focus:border-transparent bg-white disabled:opacity-50">
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
 
                             <!-- Run / Cancel Button -->
@@ -419,88 +401,6 @@
                         </div>
                     </div>
 
-                    <!-- Community Benchmark Upload Results -->
-                    <div x-show="benchUploadResults.length > 0 || benchUploading" x-cloak
-                         class="bg-white rounded-2xl border border-neutral-200 overflow-hidden mb-6">
-                        <div class="flex items-center justify-between px-6 py-4 bg-neutral-100 border-b border-neutral-200">
-                            <div class="flex items-center gap-3">
-                                <i data-lucide="upload-cloud" class="w-4 h-4 text-neutral-500"></i>
-                                <span class="text-xs font-bold uppercase tracking-wider text-neutral-600">Community Benchmark Upload</span>
-                            </div>
-                            <div x-show="benchUploading && benchUploadResults.length === 0" class="flex items-center gap-2">
-                                <div class="w-4 h-4 border-2 border-neutral-300 border-t-neutral-900 rounded-full animate-spin"></div>
-                                <span class="text-xs text-neutral-500">Uploading...</span>
-                            </div>
-                        </div>
-                        <div class="px-6 py-4 space-y-2">
-                            <div x-show="benchUploadFlags.length" x-cloak class="flex flex-wrap items-center gap-2 pb-2">
-                                <span class="text-xs text-neutral-500" x-text="t('bench.upload.flags_label')"></span>
-                                <template x-for="f in benchUploadFlags" :key="f.key">
-                                    <span class="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium"
-                                          x-text="f.label"></span>
-                                </template>
-                            </div>
-                            <template x-for="r in benchUploadResults" :key="r.context_length">
-                                <div class="flex items-center justify-between py-2 border-b border-neutral-100 last:border-0">
-                                    <span class="text-sm font-medium text-neutral-700" x-text="'pp' + r.context_length"></span>
-                                    <div class="flex items-center gap-2">
-                                        <!-- Success -->
-                                        <template x-if="r.url && !r.duplicate">
-                                            <a :href="r.url" target="_blank"
-                                               class="flex items-center gap-1.5 text-sm text-green-600 hover:text-green-700">
-                                                <i data-lucide="check-circle" class="w-4 h-4"></i>
-                                                <span x-text="r.id"></span>
-                                                <i data-lucide="external-link" class="w-3 h-3"></i>
-                                            </a>
-                                        </template>
-                                        <!-- Duplicate -->
-                                        <template x-if="r.url && r.duplicate">
-                                            <a :href="r.url" target="_blank"
-                                               class="flex items-center gap-1.5 text-sm text-amber-600 hover:text-amber-700">
-                                                <i data-lucide="copy" class="w-4 h-4"></i>
-                                                <span>Already exists</span>
-                                                <i data-lucide="external-link" class="w-3 h-3"></i>
-                                            </a>
-                                        </template>
-                                        <!-- Error -->
-                                        <template x-if="r.error">
-                                            <span class="flex items-center gap-1.5 text-sm text-red-500">
-                                                <i data-lucide="x-circle" class="w-4 h-4"></i>
-                                                <span x-text="r.error"></span>
-                                            </span>
-                                        </template>
-                                    </div>
-                                </div>
-                            </template>
-                            <!-- Upload complete summary -->
-                            <div x-show="benchUploadDone" x-cloak class="pt-3 flex items-center justify-between">
-                                <span class="text-xs text-neutral-500"
-                                      x-text="(benchUploadDone?.success || 0) + '/' + (benchUploadDone?.total || 0) + ' uploaded'"></span>
-                                <a x-show="benchUploadDone?.owner_hash"
-                                   :href="'https://omlx.ai/my/' + benchUploadDone?.owner_hash"
-                                   target="_blank"
-                                   class="flex items-center gap-1.5 text-sm font-medium text-neutral-600 hover:text-neutral-900 transition-colors">
-                                    Manage on omlx.ai
-                                    <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Community Benchmark Upload Skipped (external endpoint) -->
-                    <div x-show="benchUploadSkipped" x-cloak
-                         class="bg-amber-50 rounded-2xl border border-amber-200 overflow-hidden mb-6">
-                        <div class="flex items-center gap-3 px-6 py-4 border-b border-amber-200">
-                            <i data-lucide="flask-conical" class="w-4 h-4 text-amber-600"></i>
-                            <span class="text-xs font-bold uppercase tracking-wider text-amber-600"
-                                  x-text="t('bench.upload_skipped.title')"></span>
-                        </div>
-                        <div class="px-6 py-4 space-y-2">
-                            <p class="text-sm text-amber-600"
-                               x-text="t('bench.upload_skipped.reason_external')"></p>
-                        </div>
-                    </div>
-
                     <!-- Metrics Reference -->
                     <div class="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
                         <button @click="benchShowMetrics = !benchShowMetrics"
@@ -574,5 +474,4 @@
 
                 <!-- Accuracy tab -->
                 {% include "dashboard/_bench_accuracy.html" %}
-                {% include "dashboard/_bench_context.html" %}
             </div>

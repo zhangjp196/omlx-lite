@@ -9061,17 +9061,17 @@ class Scheduler:
         if drafter is None:
             return None
 
-        # Per-request logits processors that implement the snapshot/restore
-        # protocol (today: ThinkingBudgetProcessor) ARE applied on this
-        # path: MTPProcessingSampler threads them into mlx-vlm's verify
-        # walk through the positioned ``sample_target`` hook, with
-        # position-keyed state checkpoints so draft rejections rewind them
-        # correctly (see omlx/speculative/processing_sampler.py). Model
-        # level suppress tokens are reproduced via _make_suppressing_sampler.
-        # Everything else (grammar constraints, repetition/presence/
-        # frequency penalties) still has no application point here — same
-        # convention as Lightning MTP: fall back to BatchGenerator so every
-        # processor stays enforced (#2399).
+        # Per-request logits processors ARE applied on this path when
+        # MTPProcessingSampler can replay them at verify time:
+        # ThinkingBudgetProcessor via snapshot/restore and mlx-lm's
+        # repetition / presence / frequency penalties as stateless closures
+        # over the reconstructed history (see
+        # omlx/speculative/processing_sampler.py). Both are threaded into
+        # mlx-vlm's verify walk through the positioned ``sample_target`` hook.
+        # Model-level suppress tokens are reproduced via
+        # _make_suppressing_sampler. Guided grammar still has no rewindable
+        # application point here — same convention as Lightning MTP: fall
+        # back to BatchGenerator so it stays enforced (#2399).
         mtp_processors: list[Any] = []
         unsupported_processors: list[Any] = []
         for proc in logits_processors or []:
@@ -9141,16 +9141,16 @@ class Scheduler:
             return None
 
         if mtp_processors and not vlm_mtp_positioned_sampling_available(self.model):
-            # Without speculative_logits_from_hidden visible to the round
-            # loop, mlx-vlm's verify step samples target tokens from raw
-            # logits in one vectorized call and never consults the
-            # positioned ``sample_target`` hook — processors would be
-            # silently dropped again (#2399). The check must look at what
-            # the round loop will actually see: for mRoPE adapters (Qwen
-            # VLMs) _VLMAdapterMTPProxy hides the inner model's
-            # speculative_* fast paths, so probing the inner model
-            # directly would pass the gate and then silently skip the
-            # budget. Decline instead.
+            # Without a positioned hook visible to the round loop, mlx-vlm's
+            # verify step samples target tokens from raw logits in one
+            # vectorized call and never consults the positioned
+            # ``sample_target`` hook — processors would be silently dropped
+            # again (#2399). The check must look at what the round loop will
+            # actually see: _VLMAdapterMTPProxy hides the inner model's
+            # speculative_* fast paths for mRoPE adapters, but re-exposes an
+            # adapter-routed seam when the inner model implements the exact
+            # verifier, so probing the inner model directly is still wrong.
+            # Decline when neither path can position the processor.
             logger.info(
                 "vlm_mtp routing skipped for %s: request carries logits "
                 "processors but positioned verify sampling is unavailable "
@@ -11672,11 +11672,11 @@ class Scheduler:
             store_future = None
             if request is not None and request.prompt_token_ids:
                 if self.block_aware_cache is not None:
-                    # Internal probes (context benchmark) opt out of the
-                    # completion-time store entirely — no boundary snapshot
-                    # prep, no host memcpy, no SSD write. They still take
-                    # the block leak-guard branch below so their paged
-                    # blocks are released for eviction.
+                    # Internal probes opt out of the completion-time store
+                    # entirely — no boundary snapshot prep, no host memcpy,
+                    # no SSD write. They still take the block leak-guard
+                    # branch below so their paged blocks are released for
+                    # eviction.
                     skip_store = (
                         getattr(request, "skip_cache_store", False)
                         or self._model_has_unreconstructible_cache()

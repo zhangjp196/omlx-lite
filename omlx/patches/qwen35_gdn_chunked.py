@@ -68,7 +68,19 @@ def apply_qwen35_gdn_prefill_patch() -> bool:
     )
 
     def gated_delta_update_metal(
-        q, k, v, a, b, A_log, dt_bias, state=None, mask=None, use_kernel=True
+        q,
+        k,
+        v,
+        a,
+        b,
+        A_log,
+        dt_bias,
+        state=None,
+        mask=None,
+        use_kernel=True,
+        state_steps=None,
+        cache=None,
+        cache_index=1,
     ):
         # Debug-only: skip the GDN op entirely to measure its E2E share.
         # Output is garbage; never enable outside profiling.
@@ -77,6 +89,19 @@ def apply_qwen35_gdn_prefill_patch() -> bool:
                 B_, Hv_, Dv_ = v.shape[0], v.shape[-2], v.shape[-1]
                 state = mx.zeros((B_, Hv_, Dv_, q.shape[-1]), dtype=mx.float32)
             return v, state
+        # A recurrent cache owns the state transition (and may request
+        # intermediate states for speculative history); the fast prefill
+        # kernels do not produce those, so defer to the stock implementation.
+        if cache is not None or state_steps is not None:
+            passthrough = {"use_kernel": use_kernel}
+            if state_steps is not None:
+                passthrough["state_steps"] = state_steps
+            if cache is not None:
+                passthrough["cache"] = cache
+                passthrough["cache_index"] = cache_index
+            return original(
+                q, k, v, a, b, A_log, dt_bias, state, mask, **passthrough
+            )
         if (
             use_kernel
             and mask is None

@@ -31,7 +31,7 @@
     const DASHBOARD_MAIN_TABS = new Set(['status', 'cluster', 'settings', 'models', 'logs', 'bench']);
     const DASHBOARD_SETTINGS_TABS = new Set(['global', 'models', 'remote']);
     const DASHBOARD_MODELS_TABS = new Set(['manager', 'downloader', 'remote']);
-    const DASHBOARD_BENCH_TABS = new Set(['throughput', 'accuracy', 'context']);
+    const DASHBOARD_BENCH_TABS = new Set(['throughput', 'accuracy']);
     const THEME_STORAGE_KEY = 'omlx-chat-theme';
     const ENHANCED_READABILITY_KEY = 'omlx-enhanced-readability';
     // Hard cap for the hot (memory) and cold (SSD) KV-cache limits.
@@ -409,7 +409,6 @@
             benchPromptLengths: { 1024: true, 4096: true, 8192: false, 16384: false, 32768: false, 65536: false, 131072: false, 200000: false },
             benchBatchSizes: { 2: true, 4: true, 8: false },
             benchForceLmEngine: false,
-            benchAdvancedOptionsOpen: false,
             benchExternalEnabled: false,
             // Shared external endpoint settings (persisted in localStorage,
             // used by both the throughput and accuracy bench tabs)
@@ -430,12 +429,6 @@
             benchShowText: false,
             benchCopied: false,
             benchTip: null,
-            benchDeviceInfo: null,
-            benchUploadResults: [],
-            benchUploadDone: null,
-            benchUploading: false,
-            benchUploadSkipped: null,  // { reason } — only external-endpoint runs skip now
-            benchUploadFlags: [],      // [{key, label}] acceleration active during the run
             // { bench_id, model_id } when the server reports a running bench
             // that is NOT the one this tab is displaying. Drives the "another
             // bench is running" banner + disables Start so the user doesn't
@@ -445,16 +438,6 @@
             // Bench sub-tab & dropdown
             benchTab: 'throughput',
             benchDropdown: false,
-
-            // Context benchmark state
-            ctxBenchModelId: '',
-            ctxBenchTarget: 131072,
-            ctxBenchRunning: false,
-            ctxBenchBenchId: null,
-            ctxBenchProgress: null,   // { phase, progress, message }
-            ctxBenchResult: null,
-            ctxBenchError: '',
-            ctxBenchEventSource: null,
 
             // Accuracy benchmark state
             accModelId: '',
@@ -634,10 +617,8 @@
                     this.stopMSRefresh();
                 }
                 if (value === 'bench') {
-                    if (!this.benchDeviceInfo) await this.loadBenchDeviceInfo();
                     await this.loadBenchState();
                     await this.loadAccState();
-                    await this.loadCtxBenchState();
                 }
             },
 
@@ -1414,21 +1395,16 @@
                 );
             },
 
-            // Settings that materialize as per-request logits processors,
-            // which the VLM MTP decode path cannot apply (#2399). Mirrors
-            // vlm_mtp_processor_conflicts() in model_settings.py; neutral
-            // values (repetition 1.0, presence 0.0) do not conflict.
-            // Thinking budget is exempt: it is applied on the vlm_mtp path
-            // at verify time (MTPProcessingSampler).
+            // Settings that materialize as per-request logits processors
+            // the VLM MTP decode path cannot apply (#2399). Mirrors
+            // vlm_mtp_processor_conflicts() in model_settings.py. Only
+            // guided grammar conflicts now: thinking budget and
+            // repetition / presence penalties are applied at verify time
+            // via MTPProcessingSampler.
             vlmMtpProcessorConflict() {
                 const ms = this.modelSettings;
                 if (!ms) return false;
-                const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
-                const rep = num(ms.repetition_penalty);
-                const pres = num(ms.presence_penalty);
-                return (rep !== null && rep !== 1.0)
-                    || (pres !== null && pres !== 0.0)
-                    || !!ms.guided_grammar_enabled;
+                return !!ms.guided_grammar_enabled;
             },
 
             // Coerce a raw kwarg string from the panel into its JSON type:
@@ -2991,11 +2967,6 @@
                     .filter(([_, v]) => v)
                     .map(([k, _]) => parseInt(k));
 
-                // Load device info if not loaded yet
-                if (!this.benchDeviceInfo) {
-                    this.loadBenchDeviceInfo();
-                }
-
                 // Reset state
                 this.benchRunning = true;
                 this.benchProgress = null;
@@ -3003,11 +2974,6 @@
                 this.benchBatchResults = [];
                 this.benchError = '';
                 this.benchBenchId = null;
-                this.benchUploadResults = [];
-                this.benchUploadDone = null;
-                this.benchUploading = false;
-                this.benchUploadSkipped = null;
-                this.benchUploadFlags = [];
                 this.benchRunExternal = this.benchExternalEnabled
                     ? { base_url: this.externalBaseUrl.trim(), model: this.externalModel.trim() }
                     : null;
@@ -3091,37 +3057,7 @@
                                 }
                             }
                         } else if (data.type === 'done') {
-                            // Benchmark tests done, uploading starts
-                            this.benchUploading = true;
-                            this.benchProgress = {
-                                phase: 'upload',
-                                message: 'Uploading to community benchmarks...',
-                                current: 0,
-                                total: 0,
-                            };
-                            this.loadModels();
-                        } else if (data.type === 'upload') {
-                            // Dedupe on replay: upload entries are unique by context_length.
-                            const exists = this.benchUploadResults.some(
-                                r => r.context_length === data.data.context_length
-                            );
-                            if (!exists) {
-                                this.benchUploadResults = [...this.benchUploadResults, data.data];
-                            }
-                        } else if (data.type === 'upload_done') {
-                            this.benchUploadDone = data.data;
-                            this.benchUploadFlags = data.data.feature_flags || [];
-                            this.benchUploading = false;
-                            this.benchRunning = false;
-                            this.benchProgress = null;
-                            es.close();
-                            this.benchEventSource = null;
-                        } else if (data.type === 'upload_skipped') {
-                            this.benchUploadSkipped = {
-                                reason: data.reason || 'external_endpoint',
-                                features: data.features || [],
-                            };
-                            this.benchUploading = false;
+                            // Benchmark tests finished — the run is complete.
                             this.benchRunning = false;
                             this.benchProgress = null;
                             es.close();
@@ -3160,184 +3096,6 @@
                     console.error('Failed to cancel benchmark:', err);
                 }
                 // SSE handler will update state when error/done event arrives
-            },
-
-            // Context benchmark functions
-            async startContextBenchmark() {
-                if (!this.ctxBenchModelId || this.ctxBenchRunning) return;
-
-                this.ctxBenchRunning = true;
-                this.ctxBenchProgress = null;
-                this.ctxBenchResult = null;
-                this.ctxBenchError = '';
-                this.ctxBenchBenchId = null;
-
-                try {
-                    const response = await fetch('/admin/api/bench/context/start', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            model_id: this.ctxBenchModelId,
-                            target_tokens: this.ctxBenchTarget,
-                        }),
-                    });
-
-                    if (response.status === 401) {
-                        window.location.href = '/admin';
-                        return;
-                    }
-
-                    if (!response.ok) {
-                        const data = await response.json();
-                        this.ctxBenchError = data.detail || window.t('js.error.start_context_bench_failed');
-                        this.ctxBenchRunning = false;
-                        return;
-                    }
-
-                    const data = await response.json();
-                    this.ctxBenchBenchId = data.bench_id;
-                    this.connectContextBenchSSE(data.bench_id);
-                } catch (err) {
-                    console.error('Failed to start context benchmark:', err);
-                    this.ctxBenchError = window.t('js.error.start_context_bench_failed');
-                    this.ctxBenchRunning = false;
-                }
-            },
-
-            connectContextBenchSSE(benchId) {
-                if (this.ctxBenchEventSource) {
-                    this.ctxBenchEventSource.close();
-                }
-
-                const es = new EventSource(`/admin/api/bench/context/${benchId}/stream`);
-                this.ctxBenchEventSource = es;
-
-                es.onmessage = (event) => {
-                    try {
-                        const data = JSON.parse(event.data);
-
-                        if (data.type === 'progress') {
-                            this.ctxBenchProgress = {
-                                phase: data.phase,
-                                progress: data.progress,
-                                message: data.message,
-                            };
-                        } else if (data.type === 'result') {
-                            this.ctxBenchResult = data.data;
-                        } else if (data.type === 'done') {
-                            this.ctxBenchRunning = false;
-                            this.ctxBenchProgress = null;
-                            es.close();
-                            this.ctxBenchEventSource = null;
-                            // The applied setting changed the model row.
-                            this.loadModels();
-                        } else if (data.type === 'error') {
-                            this.ctxBenchError = data.message;
-                            this.ctxBenchRunning = false;
-                            this.ctxBenchProgress = null;
-                            es.close();
-                            this.ctxBenchEventSource = null;
-                            this.loadModels();
-                        }
-                    } catch (err) {
-                        console.error('Failed to parse SSE event:', err);
-                    }
-                };
-
-                es.onerror = () => {
-                    if (this.ctxBenchRunning) {
-                        this.ctxBenchError = window.t('js.error.benchmark_connection_lost');
-                        this.ctxBenchRunning = false;
-                        this.ctxBenchProgress = null;
-                    }
-                    es.close();
-                    this.ctxBenchEventSource = null;
-                };
-            },
-
-            async cancelContextBenchmark() {
-                if (!this.ctxBenchBenchId) return;
-                try {
-                    await fetch(`/admin/api/bench/context/${this.ctxBenchBenchId}/cancel`, { method: 'POST' });
-                } catch (err) {
-                    console.error('Failed to cancel context benchmark:', err);
-                }
-                // SSE handler will update state when the error event arrives
-            },
-
-            async loadCtxBenchState() {
-                // Attach to an in-flight context bench (page refresh, other tab).
-                try {
-                    const resp = await fetch('/admin/api/bench/context/active');
-                    if (!resp.ok) return;
-                    const data = await resp.json();
-                    if (!data.running || !data.bench_id) return;
-                    if (this.ctxBenchBenchId === data.bench_id && this.ctxBenchEventSource) {
-                        return;
-                    }
-                    this.ctxBenchBenchId = data.bench_id;
-                    this.ctxBenchModelId = data.model_id;
-                    if (data.target_tokens) this.ctxBenchTarget = data.target_tokens;
-                    this.ctxBenchRunning = true;
-                    this.ctxBenchResult = null;
-                    this.ctxBenchError = '';
-                    this.connectContextBenchSSE(data.bench_id);
-                } catch (err) {
-                    console.error('Failed to load context bench state:', err);
-                }
-            },
-
-            ctxBenchCappedByLabel() {
-                const capped = this.ctxBenchResult?.capped_by;
-                if (capped === 'target') return window.t('ctx_bench.capped.target');
-                if (capped === 'native') return window.t('ctx_bench.capped.native');
-                return window.t('ctx_bench.capped.memory');
-            },
-
-            // Native context length of the selected bench model (0 = unknown).
-            ctxBenchNativeLimit() {
-                const m = this.models.find(m => m.id === this.ctxBenchModelId);
-                return (m && m.model_context_length) || 0;
-            },
-
-            // Target presets the selected model can actually reach. Unknown
-            // native -> full list; native below the smallest preset -> keep
-            // the smallest (the server caps the search at native anyway).
-            ctxBenchTargetOptions() {
-                const all = [16384, 32768, 65536, 131072, 262144, 524288];
-                const native = this.ctxBenchNativeLimit();
-                if (!native) return all;
-                const filtered = all.filter(t => t <= native);
-                return filtered.length ? filtered : [all[0]];
-            },
-
-            // Keep the selected target inside the model's reachable presets.
-            ctxBenchClampTarget() {
-                const options = this.ctxBenchTargetOptions();
-                if (!options.includes(this.ctxBenchTarget)) {
-                    this.ctxBenchTarget = options[options.length - 1];
-                }
-            },
-
-            // Narrow-patch save of the global Prefill Priority setting from
-            // the bench tab (mirrors the Settings row; applied live server-side).
-            async saveCtxBenchPriority(value) {
-                if (this.ctxBenchRunning) return;
-                const prev = this.globalSettings.scheduler.prefill_priority;
-                if (prev === value) return;
-                this.globalSettings.scheduler.prefill_priority = value;
-                try {
-                    const resp = await fetch('/admin/api/global-settings', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ prefill_priority: value }),
-                    });
-                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-                } catch (err) {
-                    console.error('Failed to save prefill priority:', err);
-                    this.globalSettings.scheduler.prefill_priority = prev;
-                    this.ctxBenchError = window.t('js.error.save_prefill_priority_failed');
-                }
             },
 
             benchGetSpeedup(batchResult) {
@@ -3505,17 +3263,6 @@
                 }
             },
 
-            async loadBenchDeviceInfo() {
-                try {
-                    const resp = await fetch('/admin/api/device-info');
-                    if (resp.ok) {
-                        this.benchDeviceInfo = await resp.json();
-                    }
-                } catch (err) {
-                    console.error('Failed to load device info:', err);
-                }
-            },
-
             async loadBenchState() {
                 // Discover an in-progress throughput run on tab/page load so
                 // a second tab (or a refresh) can attach to its SSE stream
@@ -3618,10 +3365,6 @@
                 this.benchRunning = true;
                 this.benchSingleResults = [];
                 this.benchBatchResults = [];
-                this.benchUploadResults = [];
-                this.benchUploadDone = null;
-                this.benchUploadSkipped = null;
-                this.benchUploadFlags = [];
                 this.benchProgress = null;
                 this.benchError = '';
                 this.connectBenchSSE(other.bench_id);
@@ -3641,15 +3384,7 @@
                 this.mainTab = 'bench';
                 this.syncTabStateToUrl();
                 if (tab === 'throughput') {
-                    this.loadBenchDeviceInfo();
                     this.loadBenchState();
-                }
-                if (tab === 'context') {
-                    this.loadCtxBenchState();
-                    // The priority segment mirrors the global setting —
-                    // refresh in case it changed on the Settings tab or in
-                    // another window.
-                    this.loadGlobalSettings();
                 }
             },
 
@@ -3791,22 +3526,6 @@
                                     if (!exists) {
                                         data.data._showCategories = false;
                                         this.accAllResults.push(data.data);
-                                    }
-                                }
-                                break;
-                            case 'upload':
-                                // Community upload outcome for one suite. Idempotent
-                                // on replay: keyed to the same (model_id, benchmark)
-                                // as its result card. Array reassign for reactivity.
-                                {
-                                    const idx = this.accAllResults.findIndex(
-                                        r => r.model_id === data.data.model_id
-                                          && r.benchmark === data.data.benchmark
-                                    );
-                                    if (idx >= 0) {
-                                        const updated = { ...this.accAllResults[idx], upload: data.data };
-                                        this.accAllResults.splice(idx, 1, updated);
-                                        this.accAllResults = [...this.accAllResults];
                                     }
                                 }
                                 break;

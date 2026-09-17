@@ -398,6 +398,109 @@ async def test_remote_stream_chat_yields_openai_chunks(saved_state, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_remote_stream_chat_usage_chunk_has_timing_metrics(saved_state, tmp_path):
+    """Remote streams must emit a choices:[] usage chunk with TPS so the chat
+    performance panel does not render 0.0 for external models."""
+    state = saved_state
+    state.remote_model_manager = _remote_manager(tmp_path)
+    state.settings_manager = None
+    state.engine_pool = None
+
+    request = ChatCompletionRequest(
+        model="gpt", messages=[Message(role="user", content="hi")], stream=True,
+    )
+
+    async def fake_stream(*args, **kwargs):
+        yield {"choices": [{"delta": {"role": "assistant"}}]}
+        yield {"choices": [{"delta": {"content": "Hel"}}]}
+        yield {"choices": [{"delta": {"content": "lo"}}]}
+        yield {
+            "choices": [],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12},
+        }
+
+    fake = MagicMock()
+    fake.stream = fake_stream
+    fake.aclose = AsyncMock()
+
+    ticks = iter([0.0, 1.0, 2.0])
+    with (
+        patch("omlx.server.make_chat_client", return_value=fake),
+        patch("omlx.server.time.perf_counter", side_effect=lambda: next(ticks)),
+    ):
+        resp = await server.create_chat_completion(request, MagicMock())
+        payloads = []
+        async for event in resp.body_iterator:
+            for line in event.split("\n"):
+                line = line.strip()
+                if line.startswith("data:"):
+                    raw = line[len("data:"):].strip()
+                    if raw and raw != "[DONE]":
+                        payloads.append(json.loads(raw))
+
+    usage_payloads = [p for p in payloads if p.get("usage")]
+    assert len(usage_payloads) == 1
+    usage_chunk = usage_payloads[0]
+    assert usage_chunk["choices"] == []
+    usage = usage_chunk["usage"]
+    assert usage["prompt_tokens"] == 10
+    assert usage["completion_tokens"] == 2
+    assert usage["prompt_eval_duration"] > 0
+    assert usage["generation_duration"] > 0
+    assert usage["prompt_tokens_per_second"] > 0
+    assert usage["generation_tokens_per_second"] > 0
+
+
+@pytest.mark.asyncio
+async def test_remote_stream_chat_forwards_upstream_timing_metrics(saved_state, tmp_path):
+    """When the upstream endpoint reports its own timing, forward it verbatim
+    instead of the proxy-measured values."""
+    state = saved_state
+    state.remote_model_manager = _remote_manager(tmp_path)
+    state.settings_manager = None
+    state.engine_pool = None
+
+    request = ChatCompletionRequest(
+        model="gpt", messages=[Message(role="user", content="hi")], stream=True,
+    )
+
+    async def fake_stream(*args, **kwargs):
+        yield {"choices": [{"delta": {"content": "hi"}}]}
+        yield {
+            "choices": [],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 2,
+                "total_tokens": 12,
+                "prompt_tokens_per_second": 123.45,
+                "generation_tokens_per_second": 67.89,
+                "time_to_first_token": 0.42,
+            },
+        }
+
+    fake = MagicMock()
+    fake.stream = fake_stream
+    fake.aclose = AsyncMock()
+
+    with patch("omlx.server.make_chat_client", return_value=fake):
+        resp = await server.create_chat_completion(request, MagicMock())
+
+    payloads = []
+    async for event in resp.body_iterator:
+        for line in event.split("\n"):
+            line = line.strip()
+            if line.startswith("data:"):
+                raw = line[len("data:"):].strip()
+                if raw and raw != "[DONE]":
+                    payloads.append(json.loads(raw))
+
+    usage = next(p["usage"] for p in payloads if p.get("usage"))
+    assert usage["prompt_tokens_per_second"] == 123.45
+    assert usage["generation_tokens_per_second"] == 67.89
+    assert usage["time_to_first_token"] == 0.42
+
+
+@pytest.mark.asyncio
 async def test_remote_effective_params_priority(saved_state, tmp_path):
     state = saved_state
     state.remote_model_manager = _remote_manager(tmp_path)

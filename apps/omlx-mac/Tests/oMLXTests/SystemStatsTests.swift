@@ -48,63 +48,6 @@ final class SystemStatsTests: XCTestCase {
         XCTAssertEqual(usage.total, 0.5, accuracy: 0.0001)
     }
 
-    // MARK: - Menubar bar glyph quantization
-
-    func testBarLevelQuantizationGatesReRasters() {
-        XCTAssertEqual(MenubarMetricGlyph.quantizedBarLevel(nil), -1)
-        XCTAssertEqual(MenubarMetricGlyph.quantizedBarLevel(0), 0)
-        XCTAssertEqual(MenubarMetricGlyph.quantizedBarLevel(1), 36)
-        XCTAssertEqual(MenubarMetricGlyph.quantizedBarLevel(1.7), 36, "clamps above 100%")
-        XCTAssertEqual(MenubarMetricGlyph.quantizedBarLevel(0.5), 18)
-
-        // Sub-pixel jitter maps to the same signature — no repaint…
-        XCTAssertEqual(
-            MenubarMetricGlyph.barsSignature(
-                segments: [("MEM", 0.500)], darkMenubar: true
-            ),
-            MenubarMetricGlyph.barsSignature(
-                segments: [("MEM", 0.501)], darkMenubar: true
-            )
-        )
-        // …while a visible change, appearance flip, or a different enabled
-        // set does repaint.
-        XCTAssertNotEqual(
-            MenubarMetricGlyph.barsSignature(
-                segments: [("MEM", 0.5)], darkMenubar: true
-            ),
-            MenubarMetricGlyph.barsSignature(
-                segments: [("MEM", 0.55)], darkMenubar: true
-            )
-        )
-        XCTAssertNotEqual(
-            MenubarMetricGlyph.barsSignature(
-                segments: [("MEM", 0.5)], darkMenubar: true
-            ),
-            MenubarMetricGlyph.barsSignature(
-                segments: [("MEM", 0.5)], darkMenubar: false
-            )
-        )
-        XCTAssertNotEqual(
-            MenubarMetricGlyph.barsSignature(
-                segments: [("CPU", 0.3), ("MEM", 0.5)], darkMenubar: true
-            ),
-            MenubarMetricGlyph.barsSignature(
-                segments: [("MEM", 0.5)], darkMenubar: true
-            )
-        )
-        // Identical multi-segment readings stay stable.
-        XCTAssertEqual(
-            MenubarMetricGlyph.barsSignature(
-                segments: [("CPU", 0.3), ("GPU", nil), ("MEM", 0.5)],
-                darkMenubar: true
-            ),
-            MenubarMetricGlyph.barsSignature(
-                segments: [("CPU", 0.3), ("GPU", nil), ("MEM", 0.5)],
-                darkMenubar: true
-            )
-        )
-    }
-
     func testClusterUsageSkipsWrappedCountersAndRejectsEmptyDeltas() {
         // Wrapped counter (current < previous) must not poison the average…
         let previous = [Ticks(busy: 500, total: 1_000), Ticks(busy: 0, total: 100)]

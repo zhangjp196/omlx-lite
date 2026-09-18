@@ -20,7 +20,7 @@
 | **L5 分布式集群** | planner、张量/流水线策略、JACCL/NCCL、遥测、带宽感知 | `omlx/cluster/`（50+ 文件） | ⛔ 忽略 | 用户决定不做 |
 | **L6 量化/压缩** | oQ 数据驱动混合精度、MoE expert offload | `omlx/oq.py`、`docs/oQ_Quantization.md`、`docs/MoE_Expert_Offload.md` | ⏸️ 有公开质量基准，速度未评估 | bpw ↔ 质量/速度/内存权衡 |
 | **L7 模型生命周期** | 加载/切换/LRU、渐进加载、模型发现 | `engine_pool.py`、`model_discovery.py`、`cluster/progressive_loading.py` | 🔍 已评估 | 加载持 pool 锁 → 切换时队头阻塞（刻意权衡，修复高风险）；见 4.7 |
-| **L8 多模态** | VLM/视觉、STT/TTS、embedding、reranker | `engine/vlm.py`、`engine/{stt,tts,embedding,reranker,sts}.py` | ⏸️ 未系统评估 | 独立引擎 |
+| **L8 多模态** | VLM/视觉、STT/TTS、embedding、reranker | `engine/vlm.py`、`engine/{stt,tts,embedding,reranker,sts}.py` | 🔍 已评估 | VLM 已有两级视觉特征缓存（内存 LRU 20 + SSD）；无清晰低风险可调点 |
 | **L9 服务/API** | HTTP、流式、指标、工具调用 | `server.py`、`api/`、`admin/` | 🔍 部分已确认无问题 | 序列化/流式开销 |
 | **L10 推测解码** | draft/target、投机 prefill、接受率 | `speculative/`、`specprefill/` | ⏸️ 未系统评估 | draft 开销 vs 加速比 |
 | **L11 ANE 卸载** | Apple Neural Engine | `admin/ane_tuning.py`、`benchmarks/qwen35_ane_*` | ⛔ 忽略 | 用户决定不做（POC） |
@@ -52,7 +52,7 @@
 
 | # | 位置 | 问题 | 方案 | 工作量 | 状态 |
 |---|---|---|---|---|---|
-| 8 | `scheduler.py`(13.9k)、`server.py`(8.1k)、`oq.py`(9.3k) | 巨型单文件，定位/改动成本高 | 按职责拆分（调度/缓存/解析/采样），保留兼容入口 | 高 | ⏸️ 单独立项 |
+| 8 | `scheduler.py`(13.9k)、`server.py`(8.1k)、`oq.py`(9.3k) | 巨型单文件，定位/改动成本高 | 按职责拆分（调度/缓存/解析/采样），保留兼容入口 | 高 | ⏸️ 单独立项（评估：仅增量分模块；不做爆破式拆分） |
 | 9 | `omlx/patches/`、scheduler 内 `_patched_*` | 大量 monkey-patch mlx-lm，升级脆弱 | 收敛到单一适配层 + ABI/版本断言 + 冒烟测试 | 中高 | 🟡 部分完成（版本断言+冒烟；全量收敛待做） |
 | 10 | `OMLX_*` 环境变量散落 | 调参入口分散、缺文档 | 统一到 `config.py`/文档，env 仅作覆盖 | 中 | 🟡 部分完成（清单+漂移守卫；调用点迁移待做；实测 134 变量/49 文件） |
 | 11 | `scheduler._check_memory_pressure`(pass)、`_get_current_memory_usage`(恒 0)、`_get_process_rss` | 死路径；MemoryMonitor 已转为纯估算器 | 删除或标注 deprecated | 低 | ✅ 已完成 |
@@ -97,8 +97,8 @@
 
 | # | 位置 | 问题 | 调整 | 工作量 |
 |---|---|---|---|---|
-| **C1 = #10** | `OMLX_*` env（实测 **134 变量 / 49 文件**，非原估 299/167） | 调参入口分散、缺索引 | ① 自动生成 `docs/ENV_VARS.md` + 漂移守卫 ✅ ② 调用点迁移到 `config.py` ⏸️ | ① 低 ✅ / ② 中高 |
-| **C2 = #8** | `scheduler.py`(13.9k)/`server.py`(8.1k)/`oq.py`(9.3k) | 巨型文件 | 按职责拆分 | 高 |
+| **C1 = #10** | `OMLX_*` env（实测 **134 变量 / 49 文件**） | 调参入口分散、缺索引 | ① 生成 `docs/ENV_VARS.md` + 漂移守卫 ✅ ② 调用点迁移 → **经评估低价值、不做**（仅 2 变量跨 ≥3 文件，且默认/语义一致，无去重收益；纯美观） | ① 低 ✅ / ② ⛔ |
+| **C2 = #8** | `scheduler.py`(13.9k)/`server.py`(8.1k)/`oq.py`(9.3k) | 巨型文件 | 按职责拆分 → **评估：纯结构性收益、风险最大；建议仅增量（新代码分模块），不做整文件爆破式拆分** | 很高 |
 | **C3 = #9** | `omlx/patches/`（~60 模块）+ `_patched_*` | monkey-patch 升级脆弱 | ① 中央版本 pins + 运行时断言 + 冒烟测试 ✅ ② 全量收敛单一适配层 ⏸️（巨型重构） | ① 低 ✅ / ② 很高 |
 
 ### 4.4 候选层（需调研 + 实测，范围大）
@@ -109,7 +109,7 @@
 | ~~D2 = L5~~ | `cluster/`、`tensor_strategies.py`、`runtime_optimizations.py`、`telemetry.py` | ⛔ 忽略（用户决定，多节点成本过高） |
 | **D3 = L6** | `oq.py`、MoE offload、`docs/oQ_Quantization.md`、`docs/MoE_Expert_Offload.md` | 🔍 已评估：offload 的 TTFT 瓶颈 = **同步 fetch on miss**；作者已在 `docs/MoE_Expert_Offload.md` 记录后续项（prefill 可精确预算专家调度 + decode 预取 +17pp 命中），**非新发现** |
 | **D4 = L7** | `engine_pool.py`、`model_discovery.py`、`cluster/progressive_loading.py` | 🔍 已评估（见 4.7）：加载持 pool 锁致切换队头阻塞，刻意权衡 |
-| **D5 = L8** | `engine/vlm.py`、`engine/{stt,tts,embedding,reranker}.py`、`utils/image.py` | 视觉编码器 prefill 开销；图像解码缓存 |
+| **D5 = L8** | `engine/vlm.py`、`engine/{stt,tts,embedding,reranker}.py`、`utils/image.py` | 🔍 已评估：VLM 两级视觉特征缓存（`VisionFeatureSSDCache`，内存 LRU 20 + SSD，默认启用，key=(model,image_hash)）；无清晰低风险可调点 |
 | **D6 = L10** | `speculative/`、`specprefill/` | 🔍 已评估：opt-in；`MTPProcessingSampler.sample_target` 每 slot 重扫全 `_history`（无状态 penalty）+ 每 slot 一次 `item()` GPU sync；SpecPrefill 准入策略简单。无安全快赢 |
 | ~~D7 = L11~~ | `admin/ane_tuning.py`、`benchmarks/qwen35_ane_*` | ⛔ 忽略（用户决定，需 ANE 硬件） |
 
@@ -195,9 +195,13 @@ A1 → B1(#12 基线) → D1(L0 算子实测) → D4/D3(L7/L6) → D2/D6(L5/L10)
 - **#6**：实施 `get_phys_footprint` 节流后破坏 `test_prefill_oom_graceful.py`（测试 mock 不同 pre/post 值，节流使 delta=0）；收益微秒级可忽略，已回退。
 - **#7**：decode burst 是有意的吞吐优化（80 vs 74 tok/s），0.1s 单请求预算给 ~10 updates/sec 已足够平滑；配置已暴露（`OMLX_DECODE_BURST_*`）且文档化，改默认值会回退作者有意优化。
 
-### 单独立项（范围大，本次不做）
+### 单独立项 / 剩余评估
 
-- **#8 / #9**：巨型文件拆分、monkey-patch 收敛，均为长期工程项。
+- **#9**：已做中央版本 pins + 运行时断言 + 冒烟测试（见 C3）；全量收敛单一适配层待做（巨型重构）。
+- **#8**：巨型文件拆分。**评估**：纯结构性维护收益、风险最高；建议仅「新代码分模块」增量，不做整文件爆破式拆分。
+- **#10 迁移**：**评估低价值、不做** —— 134 变量仅 2 个跨 ≥3 文件（`OMLX_BASE_PATH` / `OMLX_MOE_EXPERT_OFFLOAD`）且默认/语义一致，无去重收益；清单 + 漂移守卫已覆盖真实收益。
+- **D5 = L8**：**评估** VLM 已有两级视觉特征缓存（内存 LRU 20 + SSD，默认启用），无清晰低风险可调点。
+- **D2 = L5 / D7 = L11**：用户决定忽略。
 
 ### P2 深入评估（#3 / #4）
 

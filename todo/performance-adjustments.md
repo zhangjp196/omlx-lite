@@ -53,7 +53,7 @@
 | # | 位置 | 问题 | 方案 | 工作量 | 状态 |
 |---|---|---|---|---|---|
 | 8 | `scheduler.py`(13.9k)、`server.py`(8.1k)、`oq.py`(9.3k) | 巨型单文件，定位/改动成本高 | 按职责拆分（调度/缓存/解析/采样），保留兼容入口 | 高 | ⏸️ 单独立项 |
-| 9 | `omlx/patches/`、scheduler 内 `_patched_*` | 大量 monkey-patch mlx-lm，升级脆弱 | 收敛到单一适配层 + ABI/版本断言 + 冒烟测试 | 中高 | ⏸️ 单独立项 |
+| 9 | `omlx/patches/`、scheduler 内 `_patched_*` | 大量 monkey-patch mlx-lm，升级脆弱 | 收敛到单一适配层 + ABI/版本断言 + 冒烟测试 | 中高 | 🟡 部分完成（版本断言+冒烟；全量收敛待做） |
 | 10 | `OMLX_*` 环境变量散落 | 调参入口分散、缺文档 | 统一到 `config.py`/文档，env 仅作覆盖 | 中 | 🟡 部分完成（清单+漂移守卫；调用点迁移待做；实测 134 变量/49 文件） |
 | 11 | `scheduler._check_memory_pressure`(pass)、`_get_current_memory_usage`(恒 0)、`_get_process_rss` | 死路径；MemoryMonitor 已转为纯估算器 | 删除或标注 deprecated | 低 | ✅ 已完成 |
 | 12 | `benchmarks/` | GPU 算子层缺 CI 基线 | 固定模型/序列建立回归基线并接入 CI | 中 | ✅ 已完成（合成算子软门 + Python 硬门） |
@@ -99,7 +99,7 @@
 |---|---|---|---|---|
 | **C1 = #10** | `OMLX_*` env（实测 **134 变量 / 49 文件**，非原估 299/167） | 调参入口分散、缺索引 | ① 自动生成 `docs/ENV_VARS.md` + 漂移守卫 ✅ ② 调用点迁移到 `config.py` ⏸️ | ① 低 ✅ / ② 中高 |
 | **C2 = #8** | `scheduler.py`(13.9k)/`server.py`(8.1k)/`oq.py`(9.3k) | 巨型文件 | 按职责拆分 | 高 |
-| **C3 = #9** | `omlx/patches/` + `_patched_*` | monkey-patch 升级脆弱 | 收敛单一适配层 + 版本断言 | 中高 |
+| **C3 = #9** | `omlx/patches/`（~60 模块）+ `_patched_*` | monkey-patch 升级脆弱 | ① 中央版本 pins + 运行时断言 + 冒烟测试 ✅ ② 全量收敛单一适配层 ⏸️（巨型重构） | ① 低 ✅ / ② 很高 |
 
 ### 4.4 候选层（需调研 + 实测，范围大）
 
@@ -180,6 +180,8 @@ A1 → B1(#12 基线) → D1(L0 算子实测) → D4/D3(L7/L6) → D2/D6(L5/L10)
   - **Python CI 硬门** `tests/test_perf_regression.py`：机器无关的复杂度比例断言（#2 `append_output_text`+join 在 4× 尺寸下 <9×，线性≈4 / 二次≈16）+ A1 缓存命中；另含两个**源码形态 tripwire**，直接守卫 scheduler 的 #1（`output_token_ids=list(...) if is_finished else []`）与 #2（无 `request.output_text +=`）调用点（这两处需加载模型才能计时）。共 5 测试、约 2.3s，进默认 CI。
   - **GPU CI 硬门** `benchmarks/operator_baseline.py` + `benchmarks/operator_baseline.json`：合成算子固定 shape 计时，与提交基线按 **归一化比例** 对比，默认容差 1.5×；并记录 `native`（各 custom kernel 包 `has_native()`）以免拿 fallback 与 native 基线对比。**机器无关**：每算子用同轮 compute 参考 matmul（4096² bf16）归一化，基线存 `op_ms/ref_ms` 比例——CI runner（macos-14 = M1）与开发机（M3 Max）绝对耗时差 5–6×，但比例稳定（实测同机 4 轮 ±10%）。`ci.yml` 的 `operator-benchmark` 任务（macos-14）已**去掉 `continue-on-error`，为硬门**；模拟 3× 回归实测正确 exit 1。本机基线：ref 10.8ms；qmv 0.17 / qmm 11.9 / sdpa_d 0.39 / sdpa_p 24.3 / moe 47.8 ms（M3 Max, mlx 0.32.2）。
 - **C1 = #10**（部分）：新增 `scripts/gen_env_docs.py` 从 `omlx/` 扫描 `OMLX_*` 静态字面量生成 `docs/ENV_VARS.md`（实测 **134 变量 / 49 文件**，修正原「299/167」估计）；新增 `tests/test_env_var_inventory.py` 漂移守卫（文档与代码不一致即失败，进默认 CI）。**仅做清单/文档（低风险 additive）；调用点迁移到 `config.py` 待做（中高风险）。**
+
+- **C3 = #9**（部分）：新增 `omlx/patches/_compat.py` 集中 `REQUIRED_VERSIONS`（mlx 0.32.2 / mlx-lm 0.31.3 / mlx-vlm 0.7.1 / mlx-embeddings 0.1.0）+ `check_pins()` / `assert_pins_match()`；`omlx/patches/__init__.py` 在导入时调用（版本漂移即告警，非致命）；新增 `tests/test_patches_compat.py`（pins vs 运行环境 + 代表性 patch 生效冒烟：`llama4_attention` 标记）。**仅做版本断言 + 冒烟（低风险）；~60 个 patch 模块的全量收敛为单一适配层待做（巨型重构）。**
 
 ### D1 = L0 算子层（↩️ 本地受阻）
 

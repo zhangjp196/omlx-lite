@@ -538,6 +538,124 @@ def _qwen4_decode_dynamic_eligible(
     )
 
 
+def _patch_qwen35_verify_gdn() -> bool:
+    """Fuse the verification GDN prework on the 0.7.1 verifier path.
+
+    mlx-vlm 0.7.1 runs the target-verify GDN forward through
+    ``Qwen3_5BatchInvariantForward._gated_delta`` (the composition moved off
+    ``Qwen3_5GatedDeltaNet.__call__`` after 0.6.15). Wrap it: for the batch-1
+    verify widths the composed conv1d + SiLU + split + RMS-scale chain is
+    replaced by one fused kernel; the rest of the method -- and any failure --
+    stays stock. Mirrors the upstream method body exactly, swapping only the
+    prework, so cache/mask/advance semantics are unchanged.
+    """
+    try:
+        from mlx_vlm.models.qwen3_5.gated_delta import gated_delta_update
+        from mlx_vlm.models.qwen3_5.speculative_verifier import (
+            Qwen3_5BatchInvariantForward,
+        )
+    except ImportError:
+        return False
+
+    cls = Qwen3_5BatchInvariantForward
+    if getattr(cls, "_omlx_gdn_verify_fused", False):
+        return True
+    orig = cls._gated_delta
+    disabled = {"flag": False}
+
+    def _eligible(layer, inputs, mask, cache) -> bool:
+        if mask is not None or inputs.ndim != 3:
+            return False
+        if inputs.shape[0] != 1 or not (3 <= inputs.shape[1] <= 9):
+            return False
+        if inputs.dtype != mx.bfloat16 or cache is None:
+            return False
+        if getattr(cache, "lengths", None) is not None:
+            return False
+        if layer.conv_kernel_size != 4:
+            return False
+        if layer.head_k_dim != 128 or layer.head_v_dim != 128:
+            return False
+        conv_state = cache[0]
+        if conv_state is None or conv_state.shape[0] != 1:
+            return False
+        if conv_state.dtype != mx.bfloat16:
+            return False
+        if layer.conv1d.weight.dtype != mx.bfloat16:
+            return False
+        return getattr(layer.conv1d, "bias", None) is None
+
+    def patched_gated_delta(self, layer, inputs, mask, cache):
+        if disabled["flag"] or not _eligible(layer, inputs, mask, cache):
+            return orig(self, layer, inputs, mask, cache)
+        try:
+            helpers = self._helpers()
+            batch, length, _ = inputs.shape
+            mixed_qkv, z, b, a = self._linears(
+                (
+                    layer.in_proj_qkv,
+                    layer.in_proj_z,
+                    layer.in_proj_b,
+                    layer.in_proj_a,
+                ),
+                inputs,
+            )
+            z = z.reshape(batch, length, -1, layer.head_v_dim)
+            conv_state = cache[0]
+            if not hasattr(layer, "_omlx_gdn_scales"):
+                inv = layer.head_k_dim**-0.5
+                layer._omlx_gdn_scales = (
+                    mx.array(inv * inv, dtype=mx.bfloat16),
+                    mx.array(inv, dtype=mx.bfloat16),
+                )
+            q_scale, k_scale = layer._omlx_gdn_scales
+            q, k, v, _next_conv = gdn_prework_fused(
+                mixed_qkv,
+                conv_state,
+                layer.conv1d.weight,
+                q_scale,
+                k_scale,
+                layer.num_k_heads,
+                layer.num_v_heads,
+                layer.head_k_dim,
+                layer.head_v_dim,
+            )
+            conv_input = mx.concatenate([conv_state, mixed_qkv], axis=1)
+            cache.update_window(
+                0, conv_input, layer.conv_kernel_size - 1, lengths=cache.lengths
+            )
+            output, _ = gated_delta_update(
+                q,
+                k,
+                v,
+                a,
+                b,
+                layer.A_log,
+                layer.dt_bias,
+                mask=None,
+                use_kernel=not layer.training,
+                cache=cache,
+            )
+            if hasattr(cache, "advance"):
+                cache.advance(length)
+                helpers._qwen3_5_advance_left_padding_info(cache, length)
+                helpers._qwen3_5_advance_lengths_info(cache, length)
+            output = layer.norm(output, z)
+            return self._linear(layer.out_proj, output.reshape(batch, length, -1))
+        except Exception:
+            disabled["flag"] = True
+            logger.warning(
+                "gdn prework (verify) fused arm failed; reverting to stock",
+                exc_info=True,
+            )
+            return orig(self, layer, inputs, mask, cache)
+
+    cls._gated_delta = patched_gated_delta
+    cls._omlx_gdn_verify_fused = True
+    logger.info("Qwen3.5/3.6 fused GDN verify prework patch applied (verifier)")
+    return True
+
+
 def apply_qwen35_gdn_prework_patch() -> bool:
     """Route the batch-1 target-verify GDN prework through the fused kernel.
 
@@ -553,31 +671,25 @@ def apply_qwen35_gdn_prework_patch() -> bool:
     if not mx.metal.is_available():
         return False
 
+    # Verify arm (mlx-vlm >= 0.6.16 / 0.7.1): the speculative verifier owns the
+    # target-verify composition, so hook it there.
+    verify_applied = _patch_qwen35_verify_gdn()
+
     try:
         from mlx_vlm.models.qwen3_5 import language as q35
     except ImportError:
-        return False
+        return verify_applied
 
+    # Decode arm (qwen4 fused B1/T1) still hooks the module call. Its fused
+    # path needs the pre-0.6.16 target-verify seam, so it degrades to stock
+    # wherever that is absent.
     needed = (
         "Qwen3_5GatedDeltaNet",
-        "_target_verify_linears",
-        "_target_verify_linear",
-        "_gated_delta_update_verify_decode",
         "_qwen3_5_advance_left_padding_info",
         "_qwen3_5_advance_lengths_info",
     )
-    missing = [n for n in needed if not hasattr(q35, n)]
-    if missing:
-        global _SEAM_WARNED
-        if not _SEAM_WARNED:
-            _SEAM_WARNED = True
-            logger.warning(
-                "gdn prework: mlx-vlm no longer exposes the target-verify "
-                "seams %s; the fused GDN verify prework stays off. Run "
-                "scripts/check_patch_seams.py for the standing report.",
-                ", ".join(missing),
-            )
-        return False
+    if not all(hasattr(q35, n) for n in needed):
+        return verify_applied
 
     cls = q35.Qwen3_5GatedDeltaNet
     if getattr(cls, "_omlx_gdn_prework_patched", False):

@@ -570,3 +570,79 @@ def test_patched_call_restores_state_and_discards_sink_on_late_failure(monkeypat
     assert bool(
         (stock_recurrent_states[0] == original_recurrent_state).all().item()
     ), "stock fallback must see the pre-call recurrent state"
+
+
+_PATCH_CFG = dict(
+    model_type="qwen3_5",
+    intermediate_size=256,
+    num_hidden_layers=2,
+    num_attention_heads=4,
+    vocab_size=128,
+    num_key_value_heads=2,
+    max_position_embeddings=64,
+    hidden_size=256,
+    linear_num_value_heads=4,
+    linear_num_key_heads=2,
+    linear_key_head_dim=128,
+    linear_value_head_dim=128,
+    linear_conv_kernel_dim=4,
+    rms_norm_eps=1e-6,
+)
+
+
+@pytest.mark.skipif(not mx.metal.is_available(), reason="requires Metal")
+def test_verify_gdn_fused_path_matches_stock_and_engages():
+    """The 0.7.1 verifier hook must engage AND be bit-identical to stock.
+
+    mlx-vlm 0.7.1 moved the target-verify GDN composition into
+    ``Qwen3_5BatchInvariantForward._gated_delta``; the patch wraps that method.
+    A spy proves the fused kernel ran (not the fallback), and a real tiny
+    Qwen3_5GatedDeltaNet + ArraysCache proves the output is unchanged.
+    """
+    from mlx_vlm.models.cache import ArraysCache
+    from mlx_vlm.models.qwen3_5.config import TextConfig
+    from mlx_vlm.models.qwen3_5.language import Qwen3_5GatedDeltaNet
+    from mlx_vlm.models.qwen3_5.speculative_verifier import (
+        Qwen3_5BatchInvariantForward as Verifier,
+    )
+
+    import omlx.patches.qwen35_gdn_prework as gp
+
+    layer = Qwen3_5GatedDeltaNet(TextConfig(**_PATCH_CFG))
+    layer.set_dtype(mx.bfloat16)
+    mx.eval(layer.parameters())
+    mx.random.seed(0)
+    inputs = (mx.random.normal((1, 4, 256)) * 0.02).astype(mx.bfloat16)
+
+    def fresh_cache():
+        cache = ArraysCache(size=2)
+        cache[0] = mx.zeros((1, 3, layer.conv_dim), dtype=mx.bfloat16)
+        cache[1] = mx.zeros(
+            (1, layer.num_v_heads, layer.head_v_dim, layer.head_k_dim),
+            dtype=mx.float32,
+        )
+        return cache
+
+    verifier = Verifier()
+    stock = verifier._gated_delta(layer, inputs, None, fresh_cache())
+    mx.eval(stock)
+
+    assert gp.apply_qwen35_gdn_prework_patch() is True
+    calls = {"n": 0}
+    original_fused = gp.gdn_prework_fused
+
+    def spy(*args, **kwargs):
+        calls["n"] += 1
+        return original_fused(*args, **kwargs)
+
+    gp.gdn_prework_fused = spy
+    try:
+        fused = Verifier._gated_delta(verifier, layer, inputs, None, fresh_cache())
+        mx.eval(fused)
+    finally:
+        gp.gdn_prework_fused = original_fused
+
+    assert calls["n"] == 1, "fused verify prework did not engage"
+    assert fused.shape == stock.shape
+    diff = mx.abs(stock.astype(mx.float32) - fused.astype(mx.float32)).max().item()
+    assert diff == 0.0, f"fused verify prework diverged: {diff}"

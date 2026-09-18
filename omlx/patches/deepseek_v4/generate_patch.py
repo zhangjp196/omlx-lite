@@ -49,7 +49,20 @@ def apply_generate_patch() -> bool:
         return False
 
     _gen = importlib.import_module("mlx_lm.generate")
-    from mlx_lm.models.cache import BatchPoolingCache, PoolingCache
+    # Order-independent and failure-safe: ensure the PoolingCache classes are
+    # injected before importing them, and decline rather than crash when the
+    # pinned mlx-lm cannot provide them. (A direct call used to jump straight
+    # to the import and raise when the caller had not injected first.)
+    try:
+        from omlx.patches.deepseek_v4 import _inject_cache_extras
+
+        _inject_cache_extras()
+        from mlx_lm.models.cache import BatchPoolingCache, PoolingCache
+    except Exception:
+        logger.debug(
+            "generate_patch: PoolingCache injection unavailable", exc_info=True
+        )
+        return False
 
     previous_make_cache = _gen._make_cache
 

@@ -11,10 +11,11 @@ Usage::
     python benchmarks/operator_baseline.py --write-baseline   # record
     python benchmarks/operator_baseline.py                    # compare
 
-Comparison is ratio-based against ``benchmarks/operator_baseline.json``. Shared
-CI runners are thermally noisy, so this is a SOFT gate: the default tolerance is
-1.5x and the CI job sets ``continue-on-error: true``. It exists to catch
-catastrophic (multi-x) regressions, not jitter.
+Each op is normalized by an in-run compute-bound reference matmul, so the gate
+is machine-independent: the baseline records ``op_ms / ref_ms`` ratios and a
+slower or faster CI runner scales both terms together. The CI job fails the
+build on a ratio over the tolerance -- it catches catastrophic regressions, not
+jitter.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ import argparse
 import importlib
 import json
 import statistics
+import sys
 import time
 from pathlib import Path
 
@@ -34,7 +36,7 @@ _GROUP_SIZE = 64
 _BITS = 4
 
 
-def _time_ms(fn, iters: int, repeats: int = 3, warmup: int = 3) -> float:
+def _time_ms(fn, iters: int, repeats: int = 5, warmup: int = 3) -> float:
     """Median ms/iter over ``repeats`` runs (min-of-medians reduces jitter)."""
     samples = []
     for _ in range(repeats):
@@ -54,6 +56,25 @@ def _quantized_dense(k: int = 4096, n: int = 4096):
     wq = mx.quantize(w, group_size=_GROUP_SIZE, bits=_BITS)
     mx.eval(*wq)
     return wq
+
+
+def _reference() -> tuple:
+    """Fixed compute-bound fp16 matmul that normalizes away machine speed.
+
+    Kept independent of the op set and of any oMLX code, so an operator
+    regression cannot move the reference and mask itself. macos-14 (M1) and
+    developer M-class machines differ by roughly the same factor on compute and
+    bandwidth, so a single compute reference keeps the normalized ratios within
+    ~10%.
+    """
+    a = (mx.random.normal((4096, 4096), key=mx.random.key(1000)) * 0.02).astype(
+        mx.bfloat16
+    )
+    b = (mx.random.normal((4096, 4096), key=mx.random.key(1001)) * 0.02).astype(
+        mx.bfloat16
+    )
+    mx.eval(a, b)
+    return (lambda: a @ b), 10
 
 
 def _ops() -> dict[str, tuple]:
@@ -88,9 +109,9 @@ def _ops() -> dict[str, tuple]:
         return mx.fast.scaled_dot_product_attention(q_p, k, v, scale=128**-0.5)
 
     ops: dict[str, tuple] = {
-        "qmv_decode": (qmv_decode, 50),
+        "qmv_decode": (qmv_decode, 200),
         "qmm_prefill": (qmm_prefill, 20),
-        "sdpa_decode": (sdpa_decode, 50),
+        "sdpa_decode": (sdpa_decode, 200),
         "sdpa_prefill": (sdpa_prefill, 10),
     }
 
@@ -128,11 +149,14 @@ def _ops() -> dict[str, tuple]:
     return ops
 
 
-def _measure() -> dict[str, float]:
-    results = {}
+def _measure() -> tuple[float, dict[str, float]]:
+    """Return ``(reference_ms, {op: ms})`` measured in one process."""
+    ref_fn, ref_iters = _reference()
+    ref_ms = _time_ms(ref_fn, ref_iters)
+    ops = {}
     for name, (fn, iters) in _ops().items():
-        results[name] = _time_ms(fn, iters)
-    return results
+        ops[name] = _time_ms(fn, iters)
+    return ref_ms, ops
 
 
 def _native_status() -> dict[str, bool]:
@@ -178,13 +202,20 @@ def main() -> int:
         "native kernels: "
         + (", ".join(native_on) if native_on else "none (stock MLX fallback)")
     )
-    current = _measure()
+    ref_ms, current = _measure()
+    ratios = {name: ms / ref_ms for name, ms in current.items()}
+    print(f"reference matmul: {ref_ms:.3f} ms")
 
     if args.write_baseline:
-        payload = {"native": native, "ops": current}
+        payload = {
+            "native": native,
+            "reference_ms": ref_ms,
+            "ratios": ratios,
+            "ops_ms": current,
+        }
         args.baseline.write_text(json.dumps(payload, indent=2) + "\n")
         for name, ms in current.items():
-            print(f"  {name:<20} {ms:8.3f} ms")
+            print(f"  {name:<20} {ms:8.3f} ms   ratio {ratios[name]:.4f}")
         print(f"\nwrote baseline -> {args.baseline}")
         return 0
 
@@ -193,23 +224,32 @@ def main() -> int:
         return 0
 
     baseline = json.loads(args.baseline.read_text())
-    base_ops = baseline.get("ops", baseline)  # tolerate the flat legacy format
+    base_ratios = baseline.get("ratios")
+    if base_ratios is None:
+        print(
+            "baseline predates reference normalization; re-run --write-baseline",
+            file=sys.stderr,
+        )
+        return 1
     base_native = baseline.get("native", {})
     if base_native != native:
         print(f"WARNING native availability changed: {base_native} -> {native}")
     regressions = []
-    print(f"{'op':<20} {'baseline':>10} {'current':>10} {'ratio':>8}")
-    for name, cur in current.items():
-        base = base_ops.get(name)
-        if base is None:
-            print(f"{name:<20} {'(none)':>10} {cur:>10.3f} {'-':>8}")
+    print(f"{'op':<20} {'base r':>9} {'cur r':>9} {'factor':>8} {'cur ms':>9}")
+    for name, cur_ms in current.items():
+        base_r = base_ratios.get(name)
+        if base_r is None:
+            print(f"{name:<20} {'(none)':>9} {'-':>9} {'-':>8} {cur_ms:>9.3f}")
             continue
-        ratio = cur / base
+        factor = ratios[name] / base_r
         flag = ""
-        if ratio > args.tolerance:
+        if factor > args.tolerance:
             flag = "  <-- REGRESSION"
             regressions.append(name)
-        print(f"{name:<20} {base:>10.3f} {cur:>10.3f} {ratio:>7.2f}x{flag}")
+        print(
+            f"{name:<20} {base_r:>9.4f} {ratios[name]:>9.4f} {factor:>7.2f}x "
+            f"{cur_ms:>9.3f}{flag}"
+        )
 
     if regressions:
         print(

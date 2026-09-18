@@ -6,11 +6,19 @@
     "qwen35_prefill": false,
     "glm_moe_dsa": false
   },
-  "ops": {
-    "qmv_decode": 0.18289917992660776,
-    "qmm_prefill": 12.102975000016158,
-    "sdpa_decode": 0.3454658199916594,
-    "sdpa_prefill": 24.687695800093934,
-    "moe_sorted_prefill": 48.26620840176474
+  "reference_ms": 10.807445799582638,
+  "ratios": {
+    "qmv_decode": 0.01605482629266969,
+    "qmm_prefill": 1.099619403173482,
+    "sdpa_decode": 0.0357903525156593,
+    "sdpa_prefill": 2.2488720231172765,
+    "moe_sorted_prefill": 4.4210029720603705
+  },
+  "ops_ms": {
+    "qmv_decode": 0.1735116649797419,
+    "qmm_prefill": 11.884077099966817,
+    "sdpa_decode": 0.386802294960944,
+    "sdpa_prefill": 24.30456250003772,
+    "moe_sorted_prefill": 47.77975000033621
   }
 }

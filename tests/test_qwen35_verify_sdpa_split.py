@@ -97,3 +97,34 @@ def test_eligibility_gates_turboquant_proxy():
     k = mx.random.normal((1, HKV, 256, HD)).astype(mx.bfloat16)
     assert _eligible(_TurboQuantProxy((1, HQ, 4, HD)), k, None) == 0
     assert _eligible(q, _TurboQuantProxy((1, HKV, 256, HD)), None) == 0
+
+
+@pytest.mark.skipif(not mx.metal.is_available(), reason="requires Metal")
+def test_patch_hooks_the_qwen3_5_seam_and_drives_fast_path():
+    """The patch must install on mlx-vlm 0.7.1's seam name.
+
+    The seam was ``_target_verify_left_padded_attention`` when the patch was
+    written and is ``_qwen3_5_left_padded_attention`` now; a rename used to
+    silently disable the optimization (apply returned False).
+    """
+    from mlx_vlm.models.qwen3_5 import language as q35_lang
+
+    from omlx.patches.qwen35_verify_sdpa_split import (
+        apply_qwen35_verify_sdpa_split_patch,
+    )
+
+    assert apply_qwen35_verify_sdpa_split_patch() is True, (
+        "patch did not apply; the qwen3_5 attention seam moved again"
+    )
+    mx.random.seed(7)
+    q = mx.random.normal((1, HQ, 4, HD)).astype(mx.bfloat16)
+    k = mx.random.normal((1, HKV, 512, HD)).astype(mx.bfloat16)
+    v = mx.random.normal((1, HKV, 512, HD)).astype(mx.bfloat16)
+    scale = HD**-0.5
+    got = q35_lang._qwen3_5_left_padded_attention(
+        q, k, v, cache=None, scale=scale, mask="causal"
+    )
+    assert got is not None and got.shape == q.shape
+    ref = _per_row_reference(q, k, v, scale)
+    diff = mx.abs(ref.astype(mx.float32) - got.astype(mx.float32)).max().item()
+    assert diff <= 3e-4, f"seam fast path diverged: diff={diff}"

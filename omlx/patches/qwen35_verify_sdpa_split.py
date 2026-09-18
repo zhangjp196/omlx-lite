@@ -16,11 +16,14 @@ covering rows [c0, c1) against ``keys[: kv_len - (L - c1)]`` with
 ``mask="causal"``. (Same construction as mlx-serve's ``splitCausalSdpa``,
 measured +4..9% decode there with speculation on.)
 
-The seam is ``_target_verify_left_padded_attention``: it runs FIRST in the
-target-verify branch and its non-None result skips the row loop, while a
-None keeps every existing path unchanged. This patch wraps it to claim the
-batch-1 / dense-cache / head_dim-256 shape and delegate everything else
-(left-padded batches, quantized caches) to the original.
+The seam is ``_qwen3_5_left_padded_attention`` (renamed from
+``_target_verify_left_padded_attention`` in mlx-vlm 0.7.1): the verifier calls
+it FIRST in the multi-row / left-padded attention branch, so a non-None result
+skips its inline row loop while a None keeps every existing path unchanged.
+This patch wraps it: it lets the upstream helper claim anything it handles (a
+real left-padded batch, a quantized cache) and only, when that returns None for
+the plain batch-1 dense cache, collapses the rows through the causal vector
+kernel.
 """
 
 from __future__ import annotations
@@ -118,12 +121,14 @@ def apply_qwen35_verify_sdpa_split_patch() -> bool:
     except ImportError:
         return False
 
-    original = getattr(q35_lang, "_target_verify_left_padded_attention", None)
+    # mlx-vlm 0.7.1 renamed this seam (was
+    # ``_target_verify_left_padded_attention`` when the patch was written).
+    original = getattr(q35_lang, "_qwen3_5_left_padded_attention", None)
     if original is None:
-        logger.debug("verify-split: target-verify seam not found; patch skipped")
+        logger.debug("verify-split: qwen3_5 attention seam not found; patch skipped")
         return False
 
-    def patched_target_verify_attention(
+    def patched_attention(
         queries,
         keys,
         values,
@@ -132,11 +137,18 @@ def apply_qwen35_verify_sdpa_split_patch() -> bool:
         scale,
         mask,
     ):
-        # Only the batch-1 dense-cache shape is ours; a batch with real left
-        # padding (or anything unexpected) keeps the original behavior.
+        # Whatever the upstream helper claims (real left padding, a quantized
+        # cache) wins; it returns None for the plain batch-1 dense cache this
+        # patch targets, which is the verifier's cue to run its inline row
+        # loop -- exactly the loop we replace with chunked vector-kernel calls.
+        upstream = original(
+            queries, keys, values, cache=cache, scale=scale, mask=mask
+        )
+        if upstream is not None:
+            return upstream
         if mask is None or (isinstance(mask, str) and mask == "causal"):
             limit = _eligible(queries, keys, cache)
-            if limit and getattr(cache, "left_padding", None) is None:
+            if limit:
                 try:
                     out = _chunked_causal_sdpa(
                         queries, keys, values, scale, limit
@@ -148,11 +160,9 @@ def apply_qwen35_verify_sdpa_split_patch() -> bool:
                         "verify-split attention failed; falling back",
                         exc_info=True,
                     )
-        return original(
-            queries, keys, values, cache=cache, scale=scale, mask=mask
-        )
+        return None
 
-    q35_lang._target_verify_left_padded_attention = patched_target_verify_attention
+    q35_lang._qwen3_5_left_padded_attention = patched_attention
     _PATCHED = True
     logger.info("Qwen3.5/3.6 verify-width causal vector attention patch applied")
     return True

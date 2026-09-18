@@ -196,37 +196,30 @@ def apply_qwen35_moe_router_patch() -> bool:
     if vcls is not None and not getattr(vcls, "_omlx_router_fused", False):
         vlm_orig = vcls.__call__
 
-        def vlm_patched_call(self, x, target_verify=False):
+        def vlm_patched_call(self, x):
+            # mlx_vlm 0.7.1's Qwen3_5MoeSparseMoeBlock.__call__ takes only
+            # ``x``: target-verify MoE composition lives in the model's
+            # speculative verifier (_feed_forward), not on the block. Passing
+            # ``target_verify`` (as an older API did) raised TypeError on every
+            # prefill. Mirror the lm branch instead.
             if not router_eligible(x, self.num_experts):
-                return vlm_orig(self, x, target_verify=target_verify)
+                return vlm_orig(self, x)
             try:
-                gates = vlm_moe._target_verify_linear(
-                    self.gate, x, target_verify
-                )
-                gates = mx.softmax(gates, axis=-1, precise=True)
+                gates = mx.softmax(self.gate(x), axis=-1, precise=True)
                 inds, scores = fused_router_topk(gates, self.top_k)
 
-                y = vlm_moe._target_verify_switch_glu(
-                    self.switch_mlp, x, inds, target_verify
-                )
+                y = self.switch_mlp(x, inds)
                 y = (y * scores[..., None]).sum(axis=-2)
 
-                shared_y = self.shared_expert(x, target_verify)
-                shared_y = (
-                    mx.sigmoid(
-                        vlm_moe._target_verify_linear(
-                            self.shared_expert_gate, x, target_verify
-                        )
-                    )
-                    * shared_y
-                )
+                shared_y = self.shared_expert(x)
+                shared_y = mx.sigmoid(self.shared_expert_gate(x)) * shared_y
                 return y + shared_y
             except Exception:
                 logger.warning(
                     "fused MoE router (vlm) failed; composed fallback",
                     exc_info=True,
                 )
-                return vlm_orig(self, x, target_verify=target_verify)
+                return vlm_orig(self, x)
 
         vcls.__call__ = vlm_patched_call
         vcls._omlx_router_fused = True

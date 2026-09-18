@@ -11377,7 +11377,7 @@ class Scheduler:
                 parser_result = parser_session.process_token(response.token)
                 new_text = parser_result.stream_text
                 if parser_result.visible_text:
-                    request.output_text += parser_result.visible_text
+                    request.append_output_text(parser_result.visible_text)
 
                 # Parser-defined stop token can override finish reason
                 if parser_result.is_stop and not is_finished:
@@ -11467,7 +11467,12 @@ class Scheduler:
                 request_id=request_id,
                 new_token_ids=[response.token] if not is_stop else [],
                 new_text=new_text,
-                output_token_ids=list(request.output_token_ids),
+                # The full cumulative token list is only consumed on finish
+                # (stop-string prefix strip at the terminal output). Streaming
+                # reads new_token_ids / output_text, not this field, so
+                # materializing it every step was O(n^2). Materialize only when
+                # the request finishes; intermediate steps carry an empty list.
+                output_token_ids=list(request.output_token_ids) if is_finished else [],
                 prompt_tokens=request.num_prompt_tokens,
                 completion_tokens=request.num_output_tokens,
                 generated_at=output_generated_at,
@@ -11510,7 +11515,7 @@ class Scheduler:
                     if final_result.stream_text:
                         output.new_text += final_result.stream_text
                     if final_result.visible_text:
-                        request.output_text += final_result.visible_text
+                        request.append_output_text(final_result.visible_text)
                     if final_result.output_text_prefix:
                         request.output_text = (
                             final_result.output_text_prefix + request.output_text
@@ -12514,10 +12519,6 @@ class Scheduler:
         drained_async_removes = self._drain_pending_async_removes()
         if drained_async_removes:
             output.has_work = True
-
-        # Check memory pressure and evict if needed (tiered cache)
-        if self.memory_monitor is not None:
-            self._check_memory_pressure()
 
         try:
             # Advance in-flight chunked prefills (one chunk per request).
@@ -13594,16 +13595,6 @@ class Scheduler:
         self.paged_cache_manager = None
         self.block_aware_cache = None
         self._boundary_snapshot_store = None
-
-    def _check_memory_pressure(self) -> None:
-        """Check memory and evict blocks if needed.
-
-        In paged SSD-only mode, memory pressure is not monitored since
-        KV cache data is stored on paged SSD, not GPU memory.
-        """
-        # In paged SSD-only mode, memory_monitor is not used
-        # All KV cache data is on paged SSD, so no GPU memory pressure from PagedCache
-        pass
 
     def _evict_blocks_permanently(self, bytes_to_free: int) -> int:
         """

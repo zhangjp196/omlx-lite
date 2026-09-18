@@ -346,35 +346,6 @@ class MemoryMonitor:
         self._running_requests = running
         self._waiting_requests = waiting
 
-    def _get_current_memory_usage(self) -> int:
-        """
-        Get current KV cache memory usage.
-
-        In paged SSD-only mode, returns 0 since KV cache data is stored on paged SSD,
-        not GPU memory. PagedCacheManager only holds metadata.
-
-        Returns:
-            0 in paged SSD-only mode (no GPU memory used for KV cache).
-        """
-        # In paged SSD-only mode, PagedCache doesn't hold GPU memory
-        # All KV cache data is on paged SSD
-        return 0
-
-    def _get_process_rss(self) -> int:
-        """
-        Get process RSS memory (fallback method).
-
-        Returns:
-            Process resident set size in bytes.
-        """
-        try:
-            import psutil
-
-            process = psutil.Process()
-            return process.memory_info().rss
-        except Exception:
-            return 0
-
     def get_memory_info(self) -> MemoryInfo:
         """
         Get current memory state.
@@ -392,7 +363,9 @@ class MemoryMonitor:
             ):
                 return self._last_memory_info
 
-            used = self._get_current_memory_usage()
+            # Paged SSD-only mode: KV cache data is on SSD, not GPU, so the
+            # monitor tracks no GPU memory usage.
+            used = 0
             available = max(0, self._max_memory - used)
             utilization = used / self._max_memory if self._max_memory > 0 else 0.0
 

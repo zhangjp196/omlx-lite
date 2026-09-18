@@ -125,7 +125,11 @@ class Request:
     status: RequestStatus = RequestStatus.WAITING
     num_computed_tokens: int = 0
     output_token_ids: List[int] = field(default_factory=list)
-    output_text: str = ""
+    # Cumulative decoded output text is held as a list of parts so the
+    # per-token protocol-parser accumulation (visible_text appends) stays
+    # O(1) instead of O(n) string copies (O(n^2) overall). The public
+    # ``output_text`` is a derived view (join) materialized only on read.
+    _output_text_parts: List[str] = field(default_factory=list)
     generation_started_at: Optional[float] = None
     last_activity_at: Optional[float] = None
 
@@ -236,6 +240,20 @@ class Request:
     def num_output_tokens(self) -> int:
         """Number of output tokens generated so far."""
         return len(self.output_token_ids)
+
+    @property
+    def output_text(self) -> str:
+        """Cumulative decoded output text (derived from the parts list)."""
+        return "".join(self._output_text_parts)
+
+    @output_text.setter
+    def output_text(self, value: str) -> None:
+        self._output_text_parts = [value] if value else []
+
+    def append_output_text(self, text: str) -> None:
+        """Append decoded output text in O(1) (no full-string copy)."""
+        if text:
+            self._output_text_parts.append(text)
 
     @property
     def num_tokens(self) -> int:

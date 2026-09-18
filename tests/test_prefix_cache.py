@@ -1083,17 +1083,19 @@ class TestPrefixIndexOperations:
     def test_find_best_prefix_match_with_match(self, prefix_cache, paged_cache):
         """Test _find_best_prefix_match finding a matching prefix."""
         tokens = [1, 2, 3, 4]
-        block_ids = [1, 2]
 
-        # Manually add to prefix index
+        # Manually add to prefix index. The entry layout is
+        # (prefix_len, prev_parent_hash, block_id); a root block's parent is
+        # b"" so the parent-pointer walk terminates after this one block.
         block_hash = compute_block_hash(b"", tokens, model_name=paged_cache.model_name)
-        prefix_cache._prefix_index[block_hash] = (4, block_ids, 1)
+        prefix_cache._prefix_index[block_hash] = (4, b"", 2)
 
         result = prefix_cache._find_best_prefix_match(tokens)
 
         assert result is not None
         prefix_len, matched_ids, num_blocks, chain_hashes = result
         assert prefix_len == 4
+        assert tuple(matched_ids) == (2,)
         assert chain_hashes == [block_hash]
 
     def test_prefix_index_immutable_after_store(self, prefix_cache, paged_cache):

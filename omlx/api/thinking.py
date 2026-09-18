@@ -179,19 +179,22 @@ def extract_thinking(text: str) -> Tuple[str, str]:
     )
 
     thinking_parts = []
-    remaining = text
+    content_parts = []
+    cursor = 0
 
-    # Extract all <think>...</think> blocks
-    while True:
-        match = _THINKING_PATTERN.search(remaining)
-        if not match:
-            break
+    # Extract all <think>...</think> blocks in a single left-to-right pass.
+    # The previous implementation re-sliced and concatenated `remaining` on
+    # every match, which is O(n^2) in the number of blocks; collecting the
+    # spans and joining once is O(n) and produces the same content string.
+    for match in _THINKING_PATTERN.finditer(text):
         thinking_parts.append(match.group(1))
-        remaining = remaining[:match.start()] + remaining[match.end():]
+        content_parts.append(text[cursor : match.start()])
+        cursor = match.end()
 
     if thinking_parts:
+        content_parts.append(text[cursor:])
         thinking = "\n".join(thinking_parts).strip()
-        return (thinking, remaining.strip())
+        return (thinking, "".join(content_parts).strip())
 
     # Handle partial: content before </think> without <think> tag
     if '</think>' in text and '<think>' not in text:

@@ -1617,7 +1617,7 @@ class ProcessMemoryEnforcer:
                     loaded_non_pinned = [
                         mid
                         for mid, e in self._engine_pool._entries.items()
-                        if e.engine is not None and not e.is_pinned
+                        if e.engine is not None and not e.is_pinned and not e.is_unloading
                     ]
                     if new_level == "hard" or len(loaded_non_pinned) > 1:
                         # Evict idle LRU victims cleanly. At hard pressure even
@@ -1640,7 +1640,7 @@ class ProcessMemoryEnforcer:
                         logger.warning(
                             f"Evicting model '{victim}' (pressure={new_level})"
                         )
-                        await self._engine_pool._unload_engine(victim)
+                        await self._engine_pool._unload_model_two_phase(victim)
                         continue
 
                     # soft: leave in-flight alone — admission pause already

@@ -4946,7 +4946,18 @@ class VLMBatchedEngine(BaseEngine):
                     yield item
             finally:
                 cancel_event.set()
-                await future
+                try:
+                    # Bounded wait: a worker stuck in a long step must not
+                    # hold the diffusion lock or the active-request
+                    # bookkeeping forever. The shield keeps a timeout
+                    # (or re-cancellation) from cancelling the executor
+                    # future itself.
+                    await asyncio.wait_for(asyncio.shield(future), timeout=30.0)
+                except BaseException:
+                    # A cancellation delivered here must not skip the
+                    # bookkeeping below: leaving _diffusion_active_requests
+                    # > 0 pins the model against eviction permanently.
+                    pass
                 self._diffusion_cancel_events.discard(cancel_event)
                 self._diffusion_active_requests -= 1
 

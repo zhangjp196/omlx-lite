@@ -480,11 +480,24 @@ class VisionFeatureSSDCache:
                 _fsync_parent_dir(file_path)
 
                 # Update index with actual file size
+                evicted_during_write = False
                 with self._ssd_lock:
                     if key in self._ssd_index:
                         old_size = self._ssd_index[key].file_size
                         self._ssd_index[key].file_size = actual_size
                         self._ssd_total_size += actual_size - old_size
+                    else:
+                        evicted_during_write = True
+
+                if evicted_during_write:
+                    # Eviction removed the index entry while this write was in
+                    # flight; remove the just-written file so it does not
+                    # become an orphan on disk (unreachable by any future
+                    # eviction or cleanup pass).
+                    try:
+                        file_path.unlink()
+                    except OSError:
+                        pass
 
             except Exception as e:
                 if isinstance(e, OSError) and e.errno in (errno.ENOSPC, errno.EDQUOT):

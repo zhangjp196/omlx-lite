@@ -89,6 +89,7 @@ def _make_entry(model_id, engine=None, is_loading=False, is_pinned=False):
     entry.engine = engine
     entry.is_loading = is_loading
     entry.is_pinned = is_pinned
+    entry.is_unloading = False
     entry.abort_loading = False
     entry.in_use = 0
     entry.last_access = 0.0
@@ -214,6 +215,7 @@ def mock_engine_pool():
     pool._lock = asyncio.Lock()
     pool._find_lru_victim = MagicMock(return_value="model-a")
     pool._unload_engine = AsyncMock()
+    pool._unload_model_two_phase = AsyncMock()
     pool._entries = {}
 
     def _entry_busy(entry):
@@ -386,6 +388,7 @@ class TestCheckAndEnforce:
             mock_mx.get_active_memory.return_value = 5 * 1024**3
             await enforcer._check_and_enforce()
         enforcer._engine_pool._unload_engine.assert_not_called()
+        enforcer._engine_pool._unload_model_two_phase.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_no_action_at_exact_limit(self, enforcer):
@@ -394,6 +397,7 @@ class TestCheckAndEnforce:
             mock_mx.get_active_memory.return_value = 10 * 1024**3
             await enforcer._check_and_enforce()
         enforcer._engine_pool._unload_engine.assert_not_called()
+        enforcer._engine_pool._unload_model_two_phase.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_evicts_when_over_limit(self, enforcer):
@@ -414,7 +418,7 @@ class TestCheckAndEnforce:
         async def fake_unload(model_id):
             enforcer._engine_pool._entries[model_id].engine = None
 
-        enforcer._engine_pool._unload_engine.side_effect = fake_unload
+        enforcer._engine_pool._unload_model_two_phase.side_effect = fake_unload
 
         with patch("omlx.process_memory_enforcer.mx") as mock_mx:
             mock_mx.get_active_memory.side_effect = _cycling(
@@ -425,7 +429,9 @@ class TestCheckAndEnforce:
                 ]
             )
             await enforcer._check_and_enforce()
-        enforcer._engine_pool._unload_engine.assert_called_once_with("model-a")
+        enforcer._engine_pool._unload_model_two_phase.assert_awaited_once_with(
+            "model-a"
+        )
 
     @pytest.mark.asyncio
     async def test_stops_when_all_pinned(self, enforcer):
@@ -445,6 +451,7 @@ class TestCheckAndEnforce:
             )
             await enforcer._check_and_enforce()
         enforcer._engine_pool._unload_engine.assert_not_called()
+        enforcer._engine_pool._unload_model_two_phase.assert_not_awaited()
         engine.abort_all_requests.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -473,7 +480,7 @@ class TestCheckAndEnforce:
         async def fake_unload(model_id):
             enforcer._engine_pool._entries[model_id].engine = None
 
-        enforcer._engine_pool._unload_engine.side_effect = fake_unload
+        enforcer._engine_pool._unload_model_two_phase.side_effect = fake_unload
 
         with patch("omlx.process_memory_enforcer.mx") as mock_mx:
             mock_mx.get_active_memory.side_effect = _cycling(
@@ -485,7 +492,7 @@ class TestCheckAndEnforce:
                 ]
             )
             await enforcer._check_and_enforce()
-        assert enforcer._engine_pool._unload_engine.call_count == 2
+        assert enforcer._engine_pool._unload_model_two_phase.call_count == 2
 
     @pytest.mark.asyncio
     async def test_aborts_loading_model_when_no_lru_victim(self, enforcer):
@@ -505,6 +512,7 @@ class TestCheckAndEnforce:
 
         assert loading_entry.abort_loading is True
         enforcer._engine_pool._unload_engine.assert_not_called()
+        enforcer._engine_pool._unload_model_two_phase.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_evicts_lru_before_aborting_loading(self, enforcer):
@@ -526,7 +534,7 @@ class TestCheckAndEnforce:
         async def fake_unload(model_id):
             enforcer._engine_pool._entries[model_id].engine = None
 
-        enforcer._engine_pool._unload_engine.side_effect = fake_unload
+        enforcer._engine_pool._unload_model_two_phase.side_effect = fake_unload
 
         # First call returns victim, second call returns None
         enforcer._engine_pool._find_lru_victim.side_effect = [
@@ -545,7 +553,9 @@ class TestCheckAndEnforce:
             await enforcer._check_and_enforce()
 
         # LRU victim evicted first
-        enforcer._engine_pool._unload_engine.assert_called_once_with("model-a")
+        enforcer._engine_pool._unload_model_two_phase.assert_awaited_once_with(
+            "model-a"
+        )
         # Then loading model abort requested
         assert loading_entry.abort_loading is True
 
@@ -657,6 +667,7 @@ class TestDisabledWhenCeilingZero:
 
         engine.abort_all_requests.assert_not_awaited()
         mock_engine_pool._unload_engine.assert_not_called()
+        mock_engine_pool._unload_model_two_phase.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_no_enforce_when_guard_off(self, mock_engine_pool):
@@ -667,6 +678,7 @@ class TestDisabledWhenCeilingZero:
             await enforcer._check_and_enforce()
 
         mock_engine_pool._unload_engine.assert_not_called()
+        mock_engine_pool._unload_model_two_phase.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_propagate_zero_disables_inline_prefill_check(self, mock_engine_pool):
@@ -1505,7 +1517,7 @@ class TestSingleModelMemoryPressure:
         async def fake_unload(model_id):
             enforcer._engine_pool._entries[model_id].engine = None
 
-        enforcer._engine_pool._unload_engine.side_effect = fake_unload
+        enforcer._engine_pool._unload_model_two_phase.side_effect = fake_unload
 
         with patch("omlx.process_memory_enforcer.mx") as mock_mx:
             mock_mx.get_active_memory.side_effect = _cycling(
@@ -1518,7 +1530,9 @@ class TestSingleModelMemoryPressure:
             await enforcer._check_and_enforce()
 
         engine.abort_all_requests.assert_awaited_once()
-        enforcer._engine_pool._unload_engine.assert_awaited_once_with("big-model")
+        enforcer._engine_pool._unload_model_two_phase.assert_awaited_once_with(
+            "big-model"
+        )
         assert entry.engine is None
 
     @pytest.mark.asyncio
@@ -1545,6 +1559,7 @@ class TestSingleModelMemoryPressure:
 
         engine.abort_all_requests.assert_awaited_once()
         enforcer._engine_pool._unload_engine.assert_not_awaited()
+        enforcer._engine_pool._unload_model_two_phase.assert_not_awaited()
         assert entry.engine is not None
         assert entry.pending_unload_reason is None
         assert entry.abort_requested is False
@@ -1573,6 +1588,7 @@ class TestSingleModelMemoryPressure:
 
         engine.abort_all_requests.assert_awaited_once()
         enforcer._engine_pool._unload_engine.assert_not_awaited()
+        enforcer._engine_pool._unload_model_two_phase.assert_not_awaited()
         assert entry.engine is not None
         assert entry.pending_unload_reason == "hard memory pressure"
         assert entry.abort_requested is True
@@ -1630,7 +1646,7 @@ class TestSingleModelMemoryPressure:
         async def fake_unload(model_id):
             enforcer._engine_pool._entries[model_id].engine = None
 
-        enforcer._engine_pool._unload_engine.side_effect = fake_unload
+        enforcer._engine_pool._unload_model_two_phase.side_effect = fake_unload
 
         with patch("omlx.process_memory_enforcer.mx") as mock_mx:
             mock_mx.get_active_memory.side_effect = _cycling(
@@ -1642,7 +1658,9 @@ class TestSingleModelMemoryPressure:
             )
             await enforcer._check_and_enforce()
 
-        enforcer._engine_pool._unload_engine.assert_awaited_once_with("idle-model")
+        enforcer._engine_pool._unload_model_two_phase.assert_awaited_once_with(
+            "idle-model"
+        )
         # Idle model's requests aborted before eviction (0 requests)
         engine_idle.abort_all_requests.assert_awaited_once()
         # Active model's requests NOT aborted
@@ -1681,6 +1699,7 @@ class TestSingleModelMemoryPressure:
         engine_b.abort_all_requests.assert_awaited_once()
         engine_a.abort_all_requests.assert_not_awaited()
         enforcer._engine_pool._unload_engine.assert_not_awaited()
+        enforcer._engine_pool._unload_model_two_phase.assert_not_awaited()
         assert entry_b.pending_unload_reason is None
         assert entry_b.abort_requested is False
         assert entry_a.pending_unload_reason is None
@@ -2288,6 +2307,7 @@ class TestTwoWatermarkPressureLevels:
         p._lock = asyncio.Lock()
         p._find_lru_victim = MagicMock(return_value=None)
         p._unload_engine = AsyncMock()
+        p._unload_model_two_phase = AsyncMock()
         p._find_pending_unload_ready_locked = MagicMock(return_value=None)
         p._unload_pending_if_idle_locked = AsyncMock(return_value=False)
         p._mark_pending_unload_locked = MagicMock(return_value=False)
@@ -2375,6 +2395,7 @@ class TestTwoWatermarkPressureLevels:
             await enforcer_2wm._check_and_enforce()
         assert enforcer_2wm._pressure_level == "ok"
         enforcer_2wm._engine_pool._unload_engine.assert_not_called()
+        enforcer_2wm._engine_pool._unload_model_two_phase.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_soft_when_active_low_but_phys_high(self, enforcer_2wm):
@@ -2444,6 +2465,7 @@ class TestTwoWatermarkPressureLevels:
         assert target_hot == 12 * 1024**3
         assert enforcer._pressure_level == "ok"
         mock_engine_pool._unload_engine.assert_not_awaited()
+        mock_engine_pool._unload_model_two_phase.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_propagates_admission_paused_on_soft(self, enforcer_2wm, pool):
@@ -2582,6 +2604,7 @@ class TestTwoWatermarkPressureLevels:
 
         engine.abort_all_requests.assert_awaited_once()
         pool._unload_engine.assert_not_awaited()
+        pool._unload_model_two_phase.assert_not_awaited()
         assert entry.engine is engine
 
     @pytest.mark.asyncio
@@ -2615,6 +2638,7 @@ class TestTwoWatermarkPressureLevels:
 
         engine.abort_all_requests.assert_awaited_once()
         pool._unload_engine.assert_not_awaited()
+        pool._unload_model_two_phase.assert_not_awaited()
         assert entry.engine is engine
 
     @pytest.mark.asyncio
@@ -3097,6 +3121,7 @@ async def test_image_cache_reclaimed_before_model_eviction(
         assert not images._image_decode_cache
         assert enforcer._pressure_level == "ok"
         mock_engine_pool._unload_engine.assert_not_called()
+        mock_engine_pool._unload_model_two_phase.assert_not_awaited()
     finally:
         images.clear_image_decode_cache()
 

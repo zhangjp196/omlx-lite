@@ -6,6 +6,7 @@ Utility functions for text processing.
 
 import json
 import re
+from collections import OrderedDict
 from typing import Any, List
 
 from ..exceptions import InvalidRequestError
@@ -290,7 +291,19 @@ _MID_SYSTEM_PROBE_TOOL = [
         },
     }
 ]
-_MID_SYSTEM_PROBE_CACHE: dict[tuple[Any, ...], bool] = {}
+_MID_SYSTEM_PROBE_CACHE: "OrderedDict[tuple[Any, ...], bool]" = OrderedDict()
+# Bound the probe cache: keys embed ``id(tokenizer)``, so every distinct
+# tokenizer instance (and every frozen chat_template_kwargs variant) adds an
+# entry that would otherwise live for the process lifetime.
+_MID_SYSTEM_PROBE_CACHE_MAX = 512
+
+
+def _remember_mid_system_probe(cache_key: tuple[Any, ...], supported: bool) -> None:
+    """Insert into the bounded LRU probe cache, evicting the oldest entry."""
+    _MID_SYSTEM_PROBE_CACHE[cache_key] = supported
+    _MID_SYSTEM_PROBE_CACHE.move_to_end(cache_key)
+    while len(_MID_SYSTEM_PROBE_CACHE) > _MID_SYSTEM_PROBE_CACHE_MAX:
+        _MID_SYSTEM_PROBE_CACHE.popitem(last=False)
 
 
 def _chat_template_supports_tool_role(tokenizer: Any) -> bool:
@@ -437,6 +450,7 @@ def chat_template_preserves_mid_system(
     )
     cached = _MID_SYSTEM_PROBE_CACHE.get(cache_key)
     if cached is not None:
+        _MID_SYSTEM_PROBE_CACHE.move_to_end(cache_key)
         return cached
 
     probe_messages = [{"role": "user", "content": _MID_SYSTEM_USER_MARKER}]
@@ -481,7 +495,7 @@ def chat_template_preserves_mid_system(
             is_partial=is_partial,
         )
     except Exception:
-        _MID_SYSTEM_PROBE_CACHE[cache_key] = False
+        _remember_mid_system_probe(cache_key, False)
         return False
 
     preceding_idx = rendered.find(preceding_marker)
@@ -492,7 +506,7 @@ def chat_template_preserves_mid_system(
     if placement == "between":
         supported = supported and assistant_idx > system_idx
 
-    _MID_SYSTEM_PROBE_CACHE[cache_key] = supported
+    _remember_mid_system_probe(cache_key, supported)
     return supported
 
 

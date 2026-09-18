@@ -3403,10 +3403,16 @@ class PagedSSDCacheManager(CacheManager):
             # Add cache type information if provided
             if layer_cache_types:
                 metadata["layer_cache_types"] = json.dumps(layer_cache_types)
+            meta_states_for_metadata = layer_meta_states
             if layer_meta_states:
+                # Clamp once and use the same values for the on-disk JSON and
+                # the in-memory index: an unclamped RotatingKVCache _idx in
+                # the in-memory copy would defeat the write-time clamp on
+                # same-session save->restore.
                 clamped_meta_states = _clamp_rotating_meta_states(
                     cache_data, layer_cache_types, layer_meta_states
                 )
+                meta_states_for_metadata = clamped_meta_states
                 metadata["layer_meta_states"] = json.dumps(
                     [list(m) if m else [] for m in clamped_meta_states]
                 )
@@ -3456,7 +3462,7 @@ class PagedSSDCacheManager(CacheManager):
                 block_size=block_size,
                 cache_signature=cache_signature,
                 layer_cache_types=layer_cache_types,
-                layer_meta_states=layer_meta_states,
+                layer_meta_states=meta_states_for_metadata,
             )
 
             # Store in hot cache (or temporary buffer) for immediate read-back.
@@ -3764,6 +3770,15 @@ class PagedSSDCacheManager(CacheManager):
         # Check hot cache first (in-memory, no I/O)
         entry = self._hot_cache_get(block_hash)
         if entry is not None:
+            if not self.is_signature_compatible(
+                (entry.get("file_metadata") or {}).get("cache_signature", "")
+            ):
+                # Layout incompatible (e.g. TurboQuant depth changed): treat
+                # as a miss and drop the stale entry so it is not served to
+                # callers that do not gate on their own.
+                self._index.remove(block_hash)
+                self._stats["misses"] += 1
+                return None
             # Entries from _promote_to_hot_cache() store mx.array objects directly
             # (safe — they come from SSD loads, not active inference).
             # Entries from save_block() use tensors_raw (raw bytes).
@@ -3787,6 +3802,12 @@ class PagedSSDCacheManager(CacheManager):
         # Check pending-write buffer (evicted from hot cache, SSD write in progress)
         entry = self._pending_write_buffer_get(block_hash)
         if entry is not None:
+            if not self.is_signature_compatible(
+                (entry.get("file_metadata") or {}).get("cache_signature", "")
+            ):
+                self._index.remove(block_hash)
+                self._stats["misses"] += 1
+                return None
             arrays = entry.get("arrays") or self._arrays_from_tensors_raw(
                 entry["tensors_raw"]
             )
@@ -3811,6 +3832,11 @@ class PagedSSDCacheManager(CacheManager):
         # Check index
         metadata = self._index.get(block_hash)
         if metadata is None:
+            self._stats["misses"] += 1
+            return None
+
+        if not self.is_signature_compatible(metadata.cache_signature):
+            self._index.remove(block_hash)
             self._stats["misses"] += 1
             return None
 

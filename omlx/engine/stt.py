@@ -14,6 +14,7 @@ import asyncio
 import gc
 import logging
 import threading
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -259,6 +260,9 @@ class _WhisperRealtimeBackend:
     # the boundary lands in a pause instead of mid-word.
     ROTATE_QUIET_SECONDS = 22.0
     QUIET_RMS = 0.01
+    # Cap buffered audio: a client that feeds faster than we can decode
+    # must not grow the PCM buffer without bound (~1.9 MB/min at 16 kHz).
+    MAX_BUFFERED_SECONDS = 30.0
 
     def __init__(self, model: Any, language: str | None = None):
         self._model = model
@@ -276,6 +280,10 @@ class _WhisperRealtimeBackend:
         with self._lock:
             self._buffer.append(samples)
             self._buffered += len(samples)
+            cap = int(self.MAX_BUFFERED_SECONDS * REALTIME_SAMPLE_RATE)
+            while self._buffered > cap and self._buffer:
+                self._buffered -= len(self._buffer[0])
+                self._buffer.pop(0)
 
     def _take(self, min_samples: int) -> np.ndarray | None:
         with self._lock:
@@ -454,13 +462,29 @@ class _VoxtralRealtimeBackend:
             return []
         return [d for d in self._session.step(max_decode_tokens=8) if d]
 
+    # A session that never reaches done (model error) must not pin the
+    # shared MLX executor forever: cap both the drain length and the wall
+    # time. ~16 tokens/step at 16 kHz keeps this far above any real tail.
+    CLOSE_MAX_STEPS = 300
+    CLOSE_TIMEOUT_SECONDS = 30.0
+
     def close_sync(self) -> list[str]:
         if self._session is None:
             return []
         self._session.close()
         out: list[str] = []
-        while not self._session.done:
+        deadline = time.monotonic() + self.CLOSE_TIMEOUT_SECONDS
+        for _ in range(self.CLOSE_MAX_STEPS):
+            if self._session.done or time.monotonic() > deadline:
+                break
             out.extend(d for d in self._session.step(max_decode_tokens=16) if d)
+        if not self._session.done:
+            logger.warning(
+                "Voxtral realtime session did not finish after %d steps / %.0fs; "
+                "returning partial tail",
+                self.CLOSE_MAX_STEPS,
+                self.CLOSE_TIMEOUT_SECONDS,
+            )
         return out
 
 
@@ -480,6 +504,7 @@ class RealtimeTranscriptionSession:
         self._backend = backend
         self._activity_id = activity_id
         self._closed = False
+        self._released = False
 
     def feed_pcm16(self, data: bytes) -> None:
         if self._closed or not data:
@@ -505,8 +530,20 @@ class RealtimeTranscriptionSession:
         )
 
     async def release(self) -> None:
+        if self._released:
+            return
+        self._released = True
         self._closed = True
-        await self._engine._release_realtime_session(self._activity_id)
+        try:
+            await self._engine._release_realtime_session(self._activity_id)
+        except BaseException:
+            # A cancelled or failing release must not leave the engine's
+            # session slot and activity count stuck: that would pin the
+            # model against LRU/TTL eviction and block every future
+            # realtime session until the process is restarted. Balance the
+            # bookkeeping synchronously, then re-raise.
+            self._engine._finish_realtime_release(self._activity_id)
+            raise
 
 
 class STTEngine(BaseNonStreamingEngine):
@@ -1133,9 +1170,20 @@ class STTEngine(BaseNonStreamingEngine):
         return RealtimeTranscriptionSession(self, backend, activity_id)
 
     async def _release_realtime_session(self, activity_id: str) -> None:
+        # Flip the slot synchronously before any await: a cancellation
+        # delivered at the await below must not leave the engine looking
+        # permanently busy.
         self._realtime_active = False
         await self._finish_activity(activity_id)
         logger.info("STT realtime session ended: model=%s", self._model_name)
+
+    def _finish_realtime_release(self, activity_id: str) -> None:
+        """Synchronous, idempotent fallback for an interrupted release."""
+        self._realtime_active = False
+        try:
+            self._end_activity(activity_id)
+        except RuntimeError:
+            pass
 
     def get_stats(self) -> dict[str, Any]:
         """Get engine statistics."""

@@ -1280,13 +1280,27 @@ class MiniMaxM3KVCacheHandler(_MiniMaxM3CacheHandlerBase):
         if not HAS_MLX or not states:
             return {}
 
-        keys_list = [s.get("keys") for s in states if s.get("keys") is not None]
-        values_list = [s.get("values") for s in states if s.get("values") is not None]
-        index_list = [
-            s.get("index_keys") for s in states if s.get("index_keys") is not None
+        # All-or-nothing per state: filtering keys/values/index_keys
+        # independently would let a block missing one field leave a hole in
+        # the concatenation, misaligning the sparse-attention index against
+        # keys/values.
+        valid = [
+            s
+            for s in states
+            if s.get("keys") is not None and s.get("values") is not None
         ]
-        if not keys_list or not values_list:
+        if not valid:
             return {}
+        if len({s.get("index_keys") is not None for s in valid}) > 1:
+            logger.warning(
+                "MiniMax M3 concatenate: mixed index_keys presence across "
+                "states; refusing to concatenate"
+            )
+            return {}
+
+        keys_list = [s["keys"] for s in valid]
+        values_list = [s["values"] for s in valid]
+        index_list = [s.get("index_keys") for s in valid]
 
         keys = mx.concatenate(keys_list, axis=2)
         values = mx.concatenate(values_list, axis=2)

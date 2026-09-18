@@ -231,7 +231,7 @@ class BlockAwarePrefixCache(CacheManager):
 
         # Hash table for quick prefix lookup
         # Maps chain-hash(prefix) -> (prefix_len, block_ids, num_blocks)
-        self._prefix_index: dict[bytes, tuple[int, tuple[int, ...], int]] = {}
+        self._prefix_index: dict[bytes, tuple[int, bytes, int]] = {}
 
         # Tie the index lifecycle to the paged cache's hash associations.
         # Without these hooks the index only ever grew (entries were dropped
@@ -1549,17 +1549,15 @@ class BlockAwarePrefixCache(CacheManager):
                     return None
                 # Recreate only the paged-manager metadata; reconstruction
                 # still loads the tensor payload from the existing cache tier.
-                cached_block = self.paged_cache.allocate_block()
+                # Atomic get-or-register: concurrent fetches of the same
+                # prefix must not race two registrations into the hash map.
+                cached_block = self.paged_cache.get_or_register_cold_block(
+                    block_hash, token_count
+                )
                 if cached_block is None:
                     for block_to_release in acquired_blocks:
                         self.paged_cache.free_block(block_to_release.block_id)
                     return None
-                cached_block.block_hash = block_hash
-                cached_block.token_count = token_count
-                cached_block.ref_count = 0
-                self.paged_cache.cached_block_hash_to_block.insert(
-                    block_hash, cached_block
-                )
 
             acquired_block = self.paged_cache.acquire_cached_block(
                 cached_block.block_id, block_hash
@@ -4704,7 +4702,11 @@ class BlockAwarePrefixCache(CacheManager):
 
                 # Check shape consistency for sliceable types (KVCache, RotatingKVCache)
                 if hasattr(keys, "shape") and len(keys.shape) >= 3:
-                    seq_len = keys.shape[2]
+                    # 4D: (batch, n_kv_heads, seq_len, head_dim); 3D (no batch
+                    # dim): (n_kv_heads, seq_len, head_dim).
+                    seq_len = (
+                        keys.shape[1] if len(keys.shape) == 3 else keys.shape[2]
+                    )
                     if expected_seq_len is None:
                         expected_seq_len = seq_len
                     elif seq_len != expected_seq_len:
@@ -4734,6 +4736,7 @@ class BlockAwarePrefixCache(CacheManager):
             were indexed for before reusing them.
         """
         best_match = None
+        best_hash: bytes | None = None
         best_len = 0
 
         parent_hash = b""
@@ -4760,11 +4763,33 @@ class BlockAwarePrefixCache(CacheManager):
             entry = self._prefix_index.get(parent_hash)
             if entry and entry[0] == prefix_len and prefix_len > best_len:
                 best_match = entry
+                best_hash = parent_hash
                 best_len = prefix_len
 
-        if best_match is None:
+        if best_match is None or best_hash is None:
             return None
-        return (*best_match, chain_hashes[: best_match[2]])
+
+        # Reconstruct the matched block ids by walking parent pointers
+        # (O(matched blocks) instead of O(matched blocks)^2 stored memory).
+        # A hole in the chain (an intermediate entry already dropped) simply
+        # truncates the match at that point -- the caller's per-block hash
+        # re-validation would have stopped at the same place.
+        block_ids: list[int] = []
+        matched_prefix_len = 0
+        cursor: bytes | None = best_hash
+        while cursor is not None and cursor != b"":
+            entry = self._prefix_index.get(cursor)
+            if entry is None:
+                break
+            if matched_prefix_len == 0:
+                matched_prefix_len = entry[0]
+            block_ids.append(entry[2])
+            cursor = entry[1]
+        block_ids.reverse()
+
+        if not block_ids:
+            return None
+        return (matched_prefix_len, tuple(block_ids), len(block_ids), chain_hashes[: len(block_ids)])
 
     def _update_prefix_index(
         self,
@@ -4800,12 +4825,16 @@ class BlockAwarePrefixCache(CacheManager):
                 )
                 block.block_hash = block_hash
 
+            prev_parent_hash = parent_hash
             parent_hash = block_hash
             prefix_len += len(block_tokens)
+            # Entry: (prefix_len, parent_hash, block_id).  Storing only the
+            # parent pointer keeps the index O(n) per chain instead of the
+            # O(n^2) total memory of per-prefix block-id tuples.
             self._prefix_index[block_hash] = (
                 prefix_len,
-                tuple(block_ids[: i + 1]),
-                i + 1,
+                prev_parent_hash,
+                block_id,
             )
 
     def _on_block_hash_dropped(self, block_hash: bytes) -> None:
@@ -4914,16 +4943,20 @@ class BlockAwarePrefixCache(CacheManager):
         )
         if tip is None:
             return None
-        # A snapshot published before completion is not reusable until the
-        # matching backbone block has actually been stored and remains live.
-        if self.paged_cache.cached_block_hash_to_block.get_block(tip) is None:
-            return None
         with self._mtp_prefix_snapshot_lock:
             entry = self._mtp_prefix_snapshots.get(tip)
             if entry is None or entry[0] != int(boundary_tokens):
                 return None
             self._mtp_prefix_snapshots.move_to_end(tip)
-            return entry[1]
+            snapshot = entry[1]
+        # A snapshot published before completion is not reusable until the
+        # matching backbone block has actually been stored and remains live.
+        # Check liveness after reading the entry (fail-closed); it must be
+        # outside the snapshot lock because _on_block_hash_dropped takes the
+        # snapshot lock while holding the paged-cache lock.
+        if self.paged_cache.cached_block_hash_to_block.get_block(tip) is None:
+            return None
+        return snapshot
 
     def get_stats(self) -> PrefixCacheStats:
         """

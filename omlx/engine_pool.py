@@ -238,6 +238,7 @@ class EngineEntry:
     is_pinned: bool = False  # Never evict if True
     abort_loading: bool = False  # Set by memory enforcer to abort in-progress load
     in_use: int = 0  # in-flight acquire/use lease count; never evict while > 0
+    is_unloading: bool = False  # Two-phase teardown in progress outside the pool lock
     abort_requested: bool = False  # Set under hard pressure for leased requests
     pending_unload_reason: str | None = None  # Unload as soon as leases/activity drain
     pending_unload_allow_pinned: bool = False  # Explicit unload may override pinning
@@ -284,6 +285,9 @@ class EnginePool:
         """
         self._entries: dict[str, EngineEntry] = {}
         self._lock = asyncio.Lock()
+        # Models with a two-phase teardown in flight (owned by the task that
+        # started it). Guards against a concurrent _unload_engine double-stop.
+        self._unloading_tasks: dict[str, asyncio.Task | None] = {}
         self._current_model_memory = 0
         # Scanned model roots, kept for org-qualified display/upload names.
         self._model_dirs: list[Path] = []
@@ -1288,7 +1292,7 @@ class EnginePool:
                 self._clear_load_failure(entry)
                 return
             self._raise_if_reload_busy(entry, "activate distributed cluster")
-            await self._unload_engine(model_id)
+            await self._unload_model_two_phase(model_id)
             self._clear_load_failure(entry)
 
     def _clear_load_failure(self, entry: EngineEntry) -> None:
@@ -1537,6 +1541,7 @@ class EnginePool:
             if (
                 entry.engine is None
                 or entry.is_loading
+                or entry.is_unloading
                 or (entry.is_pinned and not entry.pending_unload_allow_pinned)
                 or not self._entry_is_quiescent(entry)
             ):
@@ -1550,7 +1555,9 @@ class EnginePool:
     async def _unload_pending_if_idle_locked(self, model_id: str) -> bool:
         """Unload a pending model if all leases and active requests have drained.
 
-        Caller must hold ``self._lock``.
+        Caller must hold ``self._lock``. The pending marker is cleared before
+        the teardown; the two-phase helper's ``is_unloading`` flag blocks new
+        acquisitions for the whole unlocked window instead.
         """
         entry = self._entries.get(model_id)
         if (
@@ -1558,6 +1565,7 @@ class EnginePool:
             or entry.engine is None
             or not entry.pending_unload_reason
             or entry.is_loading
+            or entry.is_unloading
             or (entry.is_pinned and not entry.pending_unload_allow_pinned)
             or not self._entry_is_quiescent(entry)
         ):
@@ -1572,8 +1580,7 @@ class EnginePool:
             model_id,
             reason,
         )
-        await self._unload_engine(model_id)
-        return True
+        return await self._unload_model_two_phase(model_id)
 
     def _finish_pending_unload_task(
         self,
@@ -1641,7 +1648,7 @@ class EnginePool:
                     f"Model '{model_id}' is still loading and cannot be unloaded yet",
                 )
             if self._entry_is_quiescent(entry):
-                await self._unload_engine(model_id)
+                await self._unload_model_two_phase(model_id)
                 return True
 
             self._mark_pending_unload_locked(
@@ -1740,6 +1747,8 @@ class EnginePool:
                 raise ModelNotFoundError(model_id, list(self._entries.keys()))
             if entry.pending_unload_reason:
                 raise ModelBusyError(model_id, "start work while unload is pending")
+            if entry.is_unloading:
+                raise ModelBusyError(model_id, "start work while unload is in progress")
             expected_signature = self._engine_runtime_signature(
                 model_id,
                 runtime_settings,
@@ -1775,7 +1784,7 @@ class EnginePool:
                         "unloading before reload.",
                         model_id,
                     )
-                    await self._unload_engine(model_id)
+                    await self._unload_model_two_phase(model_id)
                     unloaded_for_admission = True
                 # If force_lm requested but current engine is VLM, unload and reload
                 if (
@@ -1788,7 +1797,7 @@ class EnginePool:
                         f"Unloading VLM engine for {model_id} "
                         f"(force_lm=True, reloading as LM)"
                     )
-                    await self._unload_engine(model_id)
+                    await self._unload_model_two_phase(model_id)
                     unloaded_for_admission = True
                 elif entry.engine is not None:
                     self._validate_llm_engine_ready(model_id, entry.engine)
@@ -1893,7 +1902,7 @@ class EnginePool:
                             f"({format_size(projected)} > "
                             f"{format_size(evict_target)})"
                         )
-                        await self._unload_engine(victim)
+                        await self._unload_model_two_phase(victim)
                         evicted_any = True
                         continue
                     if projected <= ceiling:
@@ -2048,7 +2057,15 @@ class EnginePool:
         )
         self._lease_release_tasks.add(task)
         task.add_done_callback(self._finish_lease_release_task)
-        await asyncio.shield(task)
+        try:
+            await asyncio.shield(task)
+        except Exception:
+            # A failed lease release is already logged by the done callback
+            # above; every call site of release_engine is a finally block,
+            # so re-raising would mask the request's original exception.
+            # (CancelledError is intentionally not caught: the caller's
+            # cancellation must still propagate.)
+            pass
 
     async def unload_if_idle_unpinned(self, model_id: str) -> bool:
         """Unload a loaded engine only when it is idle and not pinned."""
@@ -2067,7 +2084,7 @@ class EnginePool:
                 entry.last_access = time.time()
                 return False
 
-            await self._unload_engine(model_id)
+            await self._unload_model_two_phase(model_id)
             return True
 
     @asynccontextmanager
@@ -2098,6 +2115,8 @@ class EnginePool:
         for mid, e in self._entries.items():
             if e.engine is None or e.is_pinned:
                 continue
+            if e.is_unloading:
+                continue
             if e.in_use > 0:
                 continue
             if self._entry_has_active_requests(e):
@@ -2126,6 +2145,9 @@ class EnginePool:
             if e.is_loading or e.in_use > 0:
                 blocked.append(mid)
                 continue
+            if e.is_unloading:
+                blocked.append(f"{mid} (unloading)")
+                continue
             try:
                 if e.engine.has_active_requests():
                     blocked.append(mid)
@@ -2151,6 +2173,9 @@ class EnginePool:
                 victim,
                 model_id,
             )
+            # Stays under the caller's pool lock: this runs from the load
+            # path, and releasing the lock here would let a second DFlash
+            # load start while the process-global hooks are mid-swap.
             await self._unload_engine(victim)
 
     @staticmethod
@@ -2165,7 +2190,13 @@ class EnginePool:
 
     def _is_idle_for_prefill_eviction(self, entry: EngineEntry) -> bool:
         engine = entry.engine
-        if engine is None or entry.is_pinned or entry.is_loading or entry.in_use > 0:
+        if (
+            engine is None
+            or entry.is_pinned
+            or entry.is_loading
+            or entry.is_unloading
+            or entry.in_use > 0
+        ):
             return False
         if self._entry_has_active_requests(entry):
             return False
@@ -2325,7 +2356,7 @@ class EnginePool:
                     format_size(current + predicted),
                     format_size(target),
                 )
-                await self._unload_engine(victim)
+                await self._unload_model_two_phase(victim)
                 evicted_any = True
                 evicted_count += 1
 
@@ -2532,6 +2563,54 @@ class EnginePool:
                 return True
         return False
 
+    async def _unload_model_two_phase(self, model_id: str) -> bool:
+        """Two-phase unload: mark under the pool lock, tear down without it.
+
+        The caller must hold ``self._lock``. The entry is validated and
+        flagged ``is_unloading`` (which rejects new acquisitions for the
+        duration), the lock is released for the span of ``_unload_engine``
+        -- engine stop, gc.collect, Metal synchronize and the settle
+        barrier can each take seconds, and holding the pool lock across
+        them queued every lease release, status read and admission on the
+        pool -- then the lock is re-acquired and the flag cleared. The
+        re-acquisition is guaranteed even when the teardown raises or is
+        cancelled, so the caller's lock context stays balanced.
+
+        Returns True when the engine is gone afterwards.
+        """
+        entry = self._entries.get(model_id)
+        if (
+            entry is None
+            or entry.engine is None
+            or entry.is_loading
+            or entry.is_unloading
+            or self._unloading_tasks.get(model_id) is not None
+        ):
+            return False
+        entry.is_unloading = True
+        self._unloading_tasks[model_id] = asyncio.current_task()
+        self._lock.release()
+        try:
+            await self._unload_engine(model_id)
+        finally:
+            self._unloading_tasks.pop(model_id, None)
+            # Clear the flag as soon as the teardown is done, before the
+            # re-acquire: if another model's multi-minute load holds the
+            # pool lock in the window, waiting to clear here would leave
+            # this entry spuriously busy for the whole load.
+            e = self._entries.get(model_id)
+            if e is not None:
+                e.is_unloading = False
+                if e.engine is None:
+                    # Belt and braces: any path that leaves the engine
+                    # gone must also leave the entry acquirable.
+                    e.pending_unload_reason = None
+                    e.pending_unload_allow_pinned = False
+                    e.abort_requested = False
+            await self._lock.acquire()
+        e = self._entries.get(model_id)
+        return e is None or e.engine is None
+
     async def _unload_engine(self, model_id: str) -> None:
         """
         Immediately stop and unload an engine with memory settle barrier.
@@ -2545,6 +2624,16 @@ class EnginePool:
         """
         entry = self._entries.get(model_id)
         if not entry or entry.engine is None:
+            return
+        owner = self._unloading_tasks.get(model_id)
+        if owner is not None and owner is not asyncio.current_task():
+            # A two-phase unload is already tearing this engine down
+            # outside the pool lock; a concurrent stop() would double-
+            # tear-down and corrupt the settle barrier's memory delta.
+            logger.info(
+                f"Skipping unload of '{model_id}': a two-phase unload "
+                "is already in progress"
+            )
             return
 
         logger.info(f"Unloading model: {model_id} (immediate abort)")
@@ -2573,6 +2662,12 @@ class EnginePool:
                     exc_info=True,
                 )
                 self._wake_process_memory_enforcer()
+                # Clear the pending-unload marker: the engine stays
+                # registered (and acquirable) for a retry, so a lingering
+                # marker would wedge the model behind ModelBusyError.
+                entry.pending_unload_reason = None
+                entry.pending_unload_allow_pinned = False
+                entry.abort_requested = False
                 raise
             logger.warning(f"Error stopping engine for {model_id}: {e}")
 
@@ -3403,7 +3498,7 @@ class EnginePool:
                 entry = self._entries.get(model_id)
                 if entry and entry.engine is not None:
                     try:
-                        await self._unload_engine(model_id)
+                        await self._unload_model_two_phase(model_id)
                     except Exception as e:
                         logger.error(f"Error unloading {model_id} during shutdown: {e}")
 
@@ -3426,6 +3521,7 @@ class EnginePool:
                     "model_path": e.model_path,
                     "loaded": e.engine is not None,
                     "is_loading": e.is_loading,
+                    "unloading": e.is_unloading,
                     "loading_started_at": e.loading_started_at,
                     "estimated_size": e.estimated_size,
                     "resident_estimated_size": self._entry_resident_size(e),
@@ -3538,7 +3634,7 @@ class EnginePool:
                     f"TTL expired for model '{model_id}' "
                     f"(idle {idle_time:.0f}s > ttl {effective_ttl}s)"
                 )
-                await self._unload_engine(model_id)
+                await self._unload_model_two_phase(model_id)
                 expired.append(model_id)
 
         return expired

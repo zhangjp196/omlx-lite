@@ -25,6 +25,7 @@ Reference: vLLM v1 - vllm/v1/core/block_pool.py, vllm/v1/core/kv_cache_utils.py
 from __future__ import annotations
 
 import hashlib
+import heapq
 import logging
 import threading
 import time
@@ -899,6 +900,31 @@ class PagedCacheManager(CacheManager):
         """Decrement reference count (alias for free_block)."""
         return self.free_block(block_id)
 
+    def get_or_register_cold_block(
+        self, block_hash: BlockHash, token_count: int
+    ) -> Optional[CacheBlock]:
+        """Return the block holding a hash, registering cold metadata if absent.
+
+        Lookup and cold registration happen under one lock so concurrent
+        callers with the same hash register exactly one block instead of
+        racing duplicate registrations into the hash map (the loser block
+        would otherwise leak until eviction).
+        """
+        with self._lock:
+            block = self.cached_block_hash_to_block.get_block(block_hash)
+            if block is not None:
+                return block
+            block = self.allocate_block()
+            if block is None:
+                return None
+            # Cold-registered blocks are metadata-only until a request
+            # claims them via acquire_cached_block().
+            block.block_hash = block_hash
+            block.token_count = token_count
+            block.ref_count = 0
+            self.cached_block_hash_to_block.insert(block_hash, block)
+            return block
+
     def release_for_eviction(self, block_ids: List[int]) -> int:
         """
         Release blocks for eviction without removing from allocated_blocks.
@@ -1029,30 +1055,31 @@ class PagedCacheManager(CacheManager):
         if not self.enable_caching:
             return [], 0
 
-        with self._lock:
-            cached_blocks = []
-            parent_hash = None
-            num_cached_tokens = 0
+        cached_blocks = []
+        parent_hash = None
+        num_cached_tokens = 0
 
-            num_full_blocks = len(token_ids) // self.block_size
+        num_full_blocks = len(token_ids) // self.block_size
 
-            for i in range(num_full_blocks):
-                start = i * self.block_size
-                end = start + self.block_size
-                block_tokens = token_ids[start:end]
-                block_extra_keys = resolve_block_extra_keys(
-                    end,
-                    extra_keys=extra_keys,
-                    extra_key_token_start=extra_key_token_start,
-                    extra_key_ranges=extra_key_ranges,
-                )
+        for i in range(num_full_blocks):
+            start = i * self.block_size
+            end = start + self.block_size
+            block_tokens = token_ids[start:end]
+            block_extra_keys = resolve_block_extra_keys(
+                end,
+                extra_keys=extra_keys,
+                extra_key_token_start=extra_key_token_start,
+                extra_key_ranges=extra_key_ranges,
+            )
 
-                # Compute expected hash
-                block_hash = compute_block_hash(
-                    parent_hash, block_tokens,
-                    extra_keys=block_extra_keys, model_name=self.model_name,
-                )
+            # Compute expected hash outside the lock: it is a pure function
+            # of the token prefix and is the most expensive part of the scan.
+            block_hash = compute_block_hash(
+                parent_hash, block_tokens,
+                extra_keys=block_extra_keys, model_name=self.model_name,
+            )
 
+            with self._lock:
                 # Look up in cache
                 cached_block = self.cached_block_hash_to_block.get_block(block_hash)
 
@@ -1078,11 +1105,12 @@ class PagedCacheManager(CacheManager):
                     break  # Cache miss, stop here
 
                 cached_blocks.append(cached_block)
-                parent_hash = block_hash
-                num_cached_tokens += self.block_size
                 self.stats.hits += 1
 
-            return cached_blocks, num_cached_tokens
+            parent_hash = block_hash
+            num_cached_tokens += self.block_size
+
+        return cached_blocks, num_cached_tokens
 
     # =========================================================================
     # Legacy hash methods (for backwards compatibility)
@@ -1438,6 +1466,7 @@ class PagedCacheManager(CacheManager):
         """
         with self._lock:
             candidates = []
+            candidate_ids = set()
 
             # Iterate through free queue (LRU order)
             current = self.free_block_queue.fake_head.next_free_block
@@ -1449,22 +1478,25 @@ class PagedCacheManager(CacheManager):
                 # Block must not be null and have ref_count == 0
                 if not current.is_null and current.ref_count == 0:
                     candidates.append(current)
+                    candidate_ids.add(id(current))
                 current = current.next_free_block
 
             # Also check allocated blocks with ref_count == 0 (not in free queue yet)
             if len(candidates) < count:
-                # Sort by last_access (LRU)
-                remaining = []
-                for block in self.allocated_blocks.values():
+                remaining = [
+                    block
+                    for block in self.allocated_blocks.values()
                     if (
                         not block.is_null
                         and block.ref_count == 0
-                        and block not in candidates
-                    ):
-                        remaining.append(block)
-
-                remaining.sort(key=lambda b: b.last_access)
-                candidates.extend(remaining[: count - len(candidates)])
+                        and id(block) not in candidate_ids
+                    )
+                ]
+                candidates.extend(
+                    heapq.nsmallest(
+                        count - len(candidates), remaining, key=lambda b: b.last_access
+                    )
+                )
 
             return candidates[:count]
 
@@ -1497,8 +1529,8 @@ class PagedCacheManager(CacheManager):
                 logger.warning(f"Cannot mark null block")
                 return False
 
-            # In paged SSD-only mode, data is already on paged SSD
-            self.stats.evictions += 1
+            # In paged SSD-only mode, data is already on paged SSD; nothing
+            # is evicted here, so no eviction is counted.
 
             logger.debug(
                 f"Marked block {block_id} "
@@ -1549,13 +1581,18 @@ class PagedCacheManager(CacheManager):
             block.reset_hash()
             block.token_count = 0
 
-            # Remove from allocated_blocks and add to free queue
+            # Remove from allocated_blocks and add to free queue.
+            # A block already linked in the free queue (e.g. a cached block
+            # whose ref_count dropped to 0) must not be appended a second
+            # time: that would create a duplicate link in the free list,
+            # orphan blocks after it, and allow double allocation.
             if block_id in self.allocated_blocks:
                 del self.allocated_blocks[block_id]
                 self.stats.allocated_blocks -= 1
 
-            self.free_block_queue.append(block)
-            self.stats.free_blocks += 1
+            if block.prev_free_block is None and block.next_free_block is None:
+                self.free_block_queue.append(block)
+                self.stats.free_blocks += 1
             self.stats.evictions += 1
 
             logger.debug(f"Permanently evicted block {block_id}")

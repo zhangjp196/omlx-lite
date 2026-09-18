@@ -2519,6 +2519,7 @@ class Scheduler:
         paged_cache_manager and block_aware_cache rely on
         threading.RLock so concurrent access from main and worker is safe.
         """
+        block_table = None
         try:
             # Hold _mx_buffer_access_lock across the worker's mx-buffer
             # access. store_cache eventually drives _extract_tensor_bytes,
@@ -2552,6 +2553,14 @@ class Scheduler:
                         extra_key_ranges=extra_key_ranges,
                         hot_cache_write_back=False,
                     )
+        except Exception as e:
+            logger.warning("Async store_cache failed for %s: %s", request_id, e)
+        # The request's paged blocks must be released even when store_cache
+        # raised: they were allocated for this request and nothing else frees
+        # them (the drain path only removes the uid). Mirrors the
+        # boundary-unavailable / no-extracted-cache leak guards in
+        # _cleanup_finished.
+        try:
             if block_table is None and self.paged_cache_manager is not None:
                 block_table = self.paged_cache_manager.get_block_table(request_id)
             if block_table and self.paged_cache_manager is not None:
@@ -2559,7 +2568,7 @@ class Scheduler:
             if self.block_aware_cache is not None:
                 self.block_aware_cache.clear_request_entry(request_id)
         except Exception as e:
-            logger.warning("Async store_cache failed for %s: %s", request_id, e)
+            logger.warning("Async store_cache cleanup failed for %s: %s", request_id, e)
 
     def _drain_pending_async_removes(self) -> bool:
         """Process deferred batch_generator.remove() calls from prior steps.
@@ -11958,6 +11967,28 @@ class Scheduler:
                             logger.debug(
                                 f"Failed to submit async store for {request_id}: {e}"
                             )
+                            # A failure before the async worker was submitted
+                            # leaves the request's paged blocks unreleased --
+                            # nothing else frees them. Mirror the
+                            # boundary-unavailable leak guard. When submit
+                            # succeeded the worker owns the blocks and its own
+                            # cleanup releases them, so only run this when no
+                            # future was created.
+                            if store_future is None:
+                                block_table = None
+                                if self.paged_cache_manager:
+                                    block_table = (
+                                        self.paged_cache_manager.get_block_table(
+                                            request_id
+                                        )
+                                    )
+                                if block_table and self.paged_cache_manager:
+                                    self.paged_cache_manager.release_for_eviction(
+                                        block_table.block_ids
+                                    )
+                                self.block_aware_cache.clear_request_entry(
+                                    request_id
+                                )
                     else:
                         # No extracted_cache to store, but ensure block leak guard.
                         block_table = None

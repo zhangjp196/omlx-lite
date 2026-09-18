@@ -1887,7 +1887,10 @@ class BoundarySnapshotSSDStore:
                 second = mx.zeros(zd_shape, dtype=second.dtype)
             else:
                 second = _restore_tensor_from_bytes(raw, dtype_str, shape)
-        return (first, second) if first is not None else ()
+        # Match the V3 path's treatment of missing elements: keep the
+        # position as None instead of discarding a present second element
+        # when only the first is absent.
+        return (first, second) if (first is not None or second is not None) else ()
 
     def _reconstruct_from_safetensors(
         self,
@@ -2027,4 +2030,7 @@ class BoundarySnapshotSSDStore:
         if "zero_dim_1" in info and second is not None:
             zd_shape = tuple(int(d) for d in info["zero_dim_1"].split(","))
             second = mx.zeros(zd_shape, dtype=second.dtype)
-        return (first, second) if first is not None else ()
+        # Match the V3 path's treatment of missing elements: keep the
+        # position as None instead of discarding a present second element
+        # when only the first is absent.
+        return (first, second) if (first is not None or second is not None) else ()

@@ -20,6 +20,7 @@ catastrophic (multi-x) regressions, not jitter.
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import statistics
 import time
@@ -134,6 +135,31 @@ def _measure() -> dict[str, float]:
     return results
 
 
+def _native_status() -> dict[str, bool]:
+    """Whether each custom Metal kernel package is built and loadable.
+
+    A plain ``pip install -e .`` (no ``OMLX_WITH_CUSTOM_KERNEL=1``) leaves the
+    native extensions unbuilt, so the model paths fall back to stock MLX. The
+    baseline records this so a fallback run is never compared against a native
+    one as if they measured the same thing.
+    """
+    status = {}
+    for pkg in (
+        "bonsai",
+        "decode_fast",
+        "minimax_m3",
+        "qwen35_prefill",
+        "glm_moe_dsa",
+    ):
+        try:
+            mod = importlib.import_module(f"omlx.custom_kernels.{pkg}.fast")
+            fn = getattr(mod, "has_native", None)
+            status[pkg] = bool(fn()) if callable(fn) else False
+        except Exception:  # noqa: BLE001
+            status[pkg] = False
+    return status
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--write-baseline", action="store_true")
@@ -146,10 +172,17 @@ def main() -> int:
         f"{mx.device_info().get('device_name')}  gpu "
         f"{mx.device_info().get('architecture')}"
     )
+    native = _native_status()
+    native_on = [p for p, v in native.items() if v]
+    print(
+        "native kernels: "
+        + (", ".join(native_on) if native_on else "none (stock MLX fallback)")
+    )
     current = _measure()
 
     if args.write_baseline:
-        args.baseline.write_text(json.dumps(current, indent=2) + "\n")
+        payload = {"native": native, "ops": current}
+        args.baseline.write_text(json.dumps(payload, indent=2) + "\n")
         for name, ms in current.items():
             print(f"  {name:<20} {ms:8.3f} ms")
         print(f"\nwrote baseline -> {args.baseline}")
@@ -160,10 +193,14 @@ def main() -> int:
         return 0
 
     baseline = json.loads(args.baseline.read_text())
+    base_ops = baseline.get("ops", baseline)  # tolerate the flat legacy format
+    base_native = baseline.get("native", {})
+    if base_native != native:
+        print(f"WARNING native availability changed: {base_native} -> {native}")
     regressions = []
     print(f"{'op':<20} {'baseline':>10} {'current':>10} {'ratio':>8}")
     for name, cur in current.items():
-        base = baseline.get(name)
+        base = base_ops.get(name)
         if base is None:
             print(f"{name:<20} {'(none)':>10} {cur:>10.3f} {'-':>8}")
             continue

@@ -1141,5 +1141,19 @@
   "usage.open_settings": "Open Settings",
   "models.remote.field_supports_vision": "Multimodal (image input)",
   "models.remote.field_supports_vision_hint": "Forward image content from chat to this endpoint.",
-  "settings.resource.cache_max_note": "Maximum {gb} GB."
+  "settings.resource.cache_max_note": "Maximum {gb} GB.",
+  "modal.remote_model_settings.section_label": "Remote Model",
+  "modal.remote_model_settings.badge": "Remote",
+  "modal.remote_model_settings.generation_label": "Generation",
+  "modal.remote_model_settings.generation_hint": "Applied to chat requests routed to this endpoint.",
+  "modal.remote_model_settings.connection_label": "Connection",
+  "modal.remote_model_settings.connection_hint": "Requests are forwarded to this OpenAI-compatible endpoint.",
+  "modal.remote_model_settings.availability_label": "Availability",
+  "modal.remote_model_settings.hidden": "Hide from API",
+  "modal.remote_model_settings.hidden_hint": "Exclude this model from the /v1/models API listing.",
+  "modal.remote_model_settings.favorite": "Favorite",
+  "modal.remote_model_settings.favorite_hint": "List this model first in model selectors.",
+  "modal.remote_model_settings.thinking_default": "Use model default",
+  "modal.remote_model_settings.on": "On",
+  "modal.remote_model_settings.off": "Off"
 }

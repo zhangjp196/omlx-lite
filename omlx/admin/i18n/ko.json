@@ -1141,5 +1141,19 @@
   "usage.open_settings": "설정 열기",
   "models.remote.field_supports_vision": "멀티모달(이미지 입력)",
   "models.remote.field_supports_vision_hint": "활성화하면 채팅의 이미지가 이 엔드포인트로 전달됩니다.",
-  "settings.resource.cache_max_note": "최대 {gb} GB."
+  "settings.resource.cache_max_note": "최대 {gb} GB.",
+  "modal.remote_model_settings.section_label": "원격 모델",
+  "modal.remote_model_settings.badge": "원격",
+  "modal.remote_model_settings.generation_label": "생성",
+  "modal.remote_model_settings.generation_hint": "이 엔드포인트로 라우팅되는 채팅 요청에 적용됩니다.",
+  "modal.remote_model_settings.connection_label": "연결",
+  "modal.remote_model_settings.connection_hint": "요청이 이 OpenAI 호환 엔드포인트로 전달됩니다.",
+  "modal.remote_model_settings.availability_label": "가용성",
+  "modal.remote_model_settings.hidden": "API에서 숨기기",
+  "modal.remote_model_settings.hidden_hint": "/v1/models API 목록에서 이 모델을 제외합니다.",
+  "modal.remote_model_settings.favorite": "즐겨찾기",
+  "modal.remote_model_settings.favorite_hint": "모델 선택기에서 이 모델을 먼저 표시합니다.",
+  "modal.remote_model_settings.thinking_default": "모델 기본값 사용",
+  "modal.remote_model_settings.on": "켜기",
+  "modal.remote_model_settings.off": "끄기"
 }

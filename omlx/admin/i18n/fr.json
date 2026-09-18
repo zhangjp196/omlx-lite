@@ -1141,5 +1141,19 @@
   "usage.open_settings": "Ouvrir les paramètres",
   "models.remote.field_supports_vision": "Multimodal (entrée image)",
   "models.remote.field_supports_vision_hint": "Une fois activé, les images du chat sont transmises à ce point de terminaison.",
-  "settings.resource.cache_max_note": "Maximum {gb} GB."
+  "settings.resource.cache_max_note": "Maximum {gb} GB.",
+  "modal.remote_model_settings.section_label": "Modèle distant",
+  "modal.remote_model_settings.badge": "Distant",
+  "modal.remote_model_settings.generation_label": "Génération",
+  "modal.remote_model_settings.generation_hint": "Appliqué aux requêtes de chat routées vers ce point de terminaison.",
+  "modal.remote_model_settings.connection_label": "Connexion",
+  "modal.remote_model_settings.connection_hint": "Les requêtes sont transférées vers ce point de terminaison compatible OpenAI.",
+  "modal.remote_model_settings.availability_label": "Disponibilité",
+  "modal.remote_model_settings.hidden": "Masquer de l'API",
+  "modal.remote_model_settings.hidden_hint": "Exclure ce modèle de la liste de l'API /v1/models.",
+  "modal.remote_model_settings.favorite": "Favori",
+  "modal.remote_model_settings.favorite_hint": "Placer ce modèle en premier dans les sélecteurs de modèles.",
+  "modal.remote_model_settings.thinking_default": "Utiliser la valeur par défaut du modèle",
+  "modal.remote_model_settings.on": "Activé",
+  "modal.remote_model_settings.off": "Désactivé"
 }

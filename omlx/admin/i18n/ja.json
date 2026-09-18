@@ -1141,5 +1141,19 @@
   "usage.open_settings": "設定を開く",
   "models.remote.field_supports_vision": "マルチモーダル（画像入力）",
   "models.remote.field_supports_vision_hint": "有効にすると、チャットの画像がこのエンドポイントに転送されます。",
-  "settings.resource.cache_max_note": "最大 {gb} GB。"
+  "settings.resource.cache_max_note": "最大 {gb} GB。",
+  "modal.remote_model_settings.section_label": "リモートモデル",
+  "modal.remote_model_settings.badge": "リモート",
+  "modal.remote_model_settings.generation_label": "生成",
+  "modal.remote_model_settings.generation_hint": "このエンドポイントにルーティングされるチャットリクエストに適用されます。",
+  "modal.remote_model_settings.connection_label": "接続",
+  "modal.remote_model_settings.connection_hint": "リクエストはこの OpenAI 互換エンドポイントに転送されます。",
+  "modal.remote_model_settings.availability_label": "公開設定",
+  "modal.remote_model_settings.hidden": "API から非表示",
+  "modal.remote_model_settings.hidden_hint": "/v1/models API の一覧からこのモデルを除外します。",
+  "modal.remote_model_settings.favorite": "お気に入り",
+  "modal.remote_model_settings.favorite_hint": "モデル選択でこのモデルを先頭に表示します。",
+  "modal.remote_model_settings.thinking_default": "モデルの既定値を使用",
+  "modal.remote_model_settings.on": "オン",
+  "modal.remote_model_settings.off": "オフ"
 }

@@ -125,6 +125,37 @@
             remoteTestInfo: {},
             remoteTestBusy: false,
 
+            // Remote model settings modal (distinct from local model settings)
+            showRemoteSettingsModal: false,
+            savingRemoteSettings: false,
+            remoteSettingsError: '',
+            remoteSettingsForm: {
+                display_name: '',
+                base_url: '',
+                api_key: '',
+                model: '',
+                extra_body: '',
+                enabled: true,
+                supports_vision: false,
+            },
+            remoteSettings: {
+                model_alias: '',
+                max_context_window: null,
+                max_tokens: null,
+                temperature: null,
+                top_p: null,
+                top_k: null,
+                min_p: null,
+                repetition_penalty: null,
+                presence_penalty: null,
+                force_sampling: false,
+                enable_thinking: null,
+                thinking_budget_enabled: false,
+                thinking_budget_tokens: null,
+                is_hidden: false,
+                is_favorite: false,
+            },
+
             // Auth UI state
             showApiKey: false,
             // Sub key management
@@ -1834,6 +1865,10 @@
             },
 
             async openModelSettings(model) {
+                if (this.isRemoteModel(model)) {
+                    this.openRemoteModelSettings(model);
+                    return;
+                }
                 const isDiffusion = this.isDiffusionModel(model);
                 if (!isDiffusion && this.reasoningParsers.length === 0) {
                     try {
@@ -1848,6 +1883,138 @@
                     model.settings || {},
                 );
                 this.showModelSettingsModal = true;
+            },
+
+            isRemoteModel(model) {
+                return !!model && (
+                    model.source_type === 'remote'
+                    || model.engine_type === 'remote'
+                    || model.is_remote === true
+                );
+            },
+
+            openRemoteModelSettings(model) {
+                const s = model.settings || {};
+                this.selectedModel = model;
+                this.remoteSettingsForm = {
+                    display_name: model.display_name || '',
+                    base_url: model.base_url || '',
+                    api_key: model.api_key || '',
+                    model: model.model || '',
+                    extra_body: model.extra_body && Object.keys(model.extra_body).length
+                        ? JSON.stringify(model.extra_body, null, 2)
+                        : '',
+                    enabled: model.enabled !== false,
+                    supports_vision: model.supports_vision === true,
+                };
+                this.remoteSettings = {
+                    model_alias: s.model_alias || '',
+                    max_context_window: s.max_context_window ?? null,
+                    max_tokens: s.max_tokens ?? null,
+                    temperature: s.temperature ?? null,
+                    top_p: s.top_p ?? null,
+                    top_k: s.top_k ?? null,
+                    min_p: s.min_p ?? null,
+                    repetition_penalty: s.repetition_penalty ?? null,
+                    presence_penalty: s.presence_penalty ?? null,
+                    force_sampling: !!s.force_sampling,
+                    enable_thinking: s.enable_thinking ?? null,
+                    thinking_budget_enabled: !!s.thinking_budget_enabled || !!s.thinking_budget_tokens,
+                    thinking_budget_tokens: s.thinking_budget_tokens ?? null,
+                    is_hidden: !!s.is_hidden,
+                    is_favorite: !!s.is_favorite,
+                };
+                this.remoteSettingsError = '';
+                delete this.remoteTestStatus[model.id];
+                delete this.remoteTestError[model.id];
+                delete this.remoteTestInfo[model.id];
+                this.showRemoteSettingsModal = true;
+            },
+
+            testSelectedRemoteModel() {
+                if (!this.selectedModel) return;
+                this.testRemoteModel(this.selectedModel.id);
+            },
+
+            async saveRemoteModelSettings() {
+                if (this.savingRemoteSettings || !this.selectedModel) return;
+                this.remoteSettingsError = '';
+                const form = this.remoteSettingsForm;
+                if (!form.base_url.trim() || !form.model.trim()) {
+                    this.remoteSettingsError = window.t('models.remote.form_required');
+                    return;
+                }
+                let extraBody = {};
+                if (form.extra_body.trim()) {
+                    try {
+                        const parsed = JSON.parse(form.extra_body);
+                        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                            this.remoteSettingsError = window.t('models.remote.form_invalid_json');
+                            return;
+                        }
+                        extraBody = parsed;
+                    } catch (e) {
+                        this.remoteSettingsError = window.t('models.remote.form_invalid_json');
+                        return;
+                    }
+                }
+                const modelId = this.selectedModel.id;
+                this.savingRemoteSettings = true;
+                try {
+                    const endpointResponse = await fetch(`/admin/api/remote-models/${encodeURIComponent(modelId)}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            id: modelId,
+                            display_name: form.display_name,
+                            base_url: form.base_url,
+                            api_key: form.api_key,
+                            model: form.model,
+                            extra_body: extraBody,
+                            enabled: form.enabled,
+                            supports_vision: form.supports_vision,
+                        }),
+                    });
+                    if (!endpointResponse.ok) {
+                        const data = await endpointResponse.json().catch(() => ({}));
+                        this.remoteSettingsError = data.detail || window.t('models.remote.save_failed');
+                        return;
+                    }
+                    const settingsResponse = await fetch(`/admin/api/models/${encodeURIComponent(modelId)}/settings`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            model_alias: this.remoteSettings.model_alias?.trim() || null,
+                            max_context_window: this.remoteSettings.max_context_window || null,
+                            max_tokens: this.remoteSettings.max_tokens || null,
+                            temperature: Number.isFinite(this.remoteSettings.temperature) ? this.remoteSettings.temperature : null,
+                            top_p: Number.isFinite(this.remoteSettings.top_p) ? this.remoteSettings.top_p : null,
+                            top_k: Number.isFinite(this.remoteSettings.top_k) ? this.remoteSettings.top_k : null,
+                            min_p: Number.isFinite(this.remoteSettings.min_p) ? this.remoteSettings.min_p : null,
+                            repetition_penalty: Number.isFinite(this.remoteSettings.repetition_penalty) ? this.remoteSettings.repetition_penalty : null,
+                            presence_penalty: Number.isFinite(this.remoteSettings.presence_penalty) ? this.remoteSettings.presence_penalty : null,
+                            force_sampling: this.remoteSettings.force_sampling,
+                            enable_thinking: this.remoteSettings.enable_thinking,
+                            thinking_budget_enabled: this.remoteSettings.thinking_budget_enabled,
+                            thinking_budget_tokens: this.remoteSettings.thinking_budget_enabled
+                                ? (this.remoteSettings.thinking_budget_tokens || null)
+                                : 0,
+                            is_hidden: this.remoteSettings.is_hidden,
+                            is_favorite: this.remoteSettings.is_favorite,
+                        }),
+                    });
+                    if (!settingsResponse.ok) {
+                        const data = await settingsResponse.json().catch(() => ({}));
+                        this.remoteSettingsError = data.detail || window.t('js.error.save_model_settings_failed');
+                        return;
+                    }
+                    this.showRemoteSettingsModal = false;
+                    await this.loadRemoteModels();
+                } catch (err) {
+                    this.remoteSettingsError = window.t('models.remote.save_failed');
+                } finally {
+                    this.savingRemoteSettings = false;
+                }
             },
 
             async importMtplxSidecar() {

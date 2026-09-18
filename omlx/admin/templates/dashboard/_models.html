@@ -1580,6 +1580,11 @@
                                                 </td>
                                                 <td class="px-4 sm:px-6 py-3">
                                                     <div class="flex items-center justify-end gap-1.5">
+                                                        <button @click="openModelSettings(rm)"
+                                                                class="p-1.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded-lg transition-colors"
+                                                                :title="window.t('settings.remote.open_settings')">
+                                                            <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+                                                        </button>
                                                         <button @click="testRemoteModel(rm.id)"
                                                                 :disabled="remoteTestBusy"
                                                                 class="p-1.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded-lg transition-colors disabled:opacity-40"

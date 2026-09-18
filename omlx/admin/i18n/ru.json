@@ -1141,5 +1141,19 @@
   "usage.open_settings": "Открыть настройки",
   "models.remote.field_supports_vision": "Мультимодальность (ввод изображений)",
   "models.remote.field_supports_vision_hint": "Включение пересылает изображения из чата на эту конечную точку.",
-  "settings.resource.cache_max_note": "Максимум {gb} GB."
+  "settings.resource.cache_max_note": "Максимум {gb} GB.",
+  "modal.remote_model_settings.section_label": "Удалённая модель",
+  "modal.remote_model_settings.badge": "Удалённая",
+  "modal.remote_model_settings.generation_label": "Генерация",
+  "modal.remote_model_settings.generation_hint": "Применяется к чат-запросам, направляемым на эту конечную точку.",
+  "modal.remote_model_settings.connection_label": "Подключение",
+  "modal.remote_model_settings.connection_hint": "Запросы перенаправляются на эту конечную точку, совместимую с OpenAI.",
+  "modal.remote_model_settings.availability_label": "Доступность",
+  "modal.remote_model_settings.hidden": "Скрыть из API",
+  "modal.remote_model_settings.hidden_hint": "Исключить эту модель из списка API /v1/models.",
+  "modal.remote_model_settings.favorite": "Избранное",
+  "modal.remote_model_settings.favorite_hint": "Показывать эту модель первой в выборе моделей.",
+  "modal.remote_model_settings.thinking_default": "Использовать значение модели по умолчанию",
+  "modal.remote_model_settings.on": "Вкл.",
+  "modal.remote_model_settings.off": "Выкл."
 }

@@ -1141,5 +1141,19 @@
   "usage.open_settings": "打开设置",
   "models.remote.field_supports_vision": "多模态（支持图片）",
   "models.remote.field_supports_vision_hint": "启用后，聊天中的图片将转发给该端点。",
-  "settings.resource.cache_max_note": "最大 {gb} GB。"
+  "settings.resource.cache_max_note": "最大 {gb} GB。",
+  "modal.remote_model_settings.section_label": "远端模型",
+  "modal.remote_model_settings.badge": "远端",
+  "modal.remote_model_settings.generation_label": "生成参数",
+  "modal.remote_model_settings.generation_hint": "应用于路由到该端点的对话请求。",
+  "modal.remote_model_settings.connection_label": "连接",
+  "modal.remote_model_settings.connection_hint": "请求将被转发到这个兼容 OpenAI 的端点。",
+  "modal.remote_model_settings.availability_label": "可用性",
+  "modal.remote_model_settings.hidden": "从 API 隐藏",
+  "modal.remote_model_settings.hidden_hint": "在 /v1/models API 列表中隐藏该模型。",
+  "modal.remote_model_settings.favorite": "收藏",
+  "modal.remote_model_settings.favorite_hint": "在模型选择器中优先显示该模型。",
+  "modal.remote_model_settings.thinking_default": "使用模型默认值",
+  "modal.remote_model_settings.on": "开启",
+  "modal.remote_model_settings.off": "关闭"
 }

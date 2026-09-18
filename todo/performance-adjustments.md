@@ -181,7 +181,11 @@ A1 → B1(#12 基线) → D1(L0 算子实测) → D4/D3(L7/L6) → D2/D6(L5/L10)
   - **GPU CI 硬门** `benchmarks/operator_baseline.py` + `benchmarks/operator_baseline.json`：合成算子固定 shape 计时，与提交基线按 **归一化比例** 对比，默认容差 1.5×；并记录 `native`（各 custom kernel 包 `has_native()`）以免拿 fallback 与 native 基线对比。**机器无关**：每算子用同轮 compute 参考 matmul（4096² bf16）归一化，基线存 `op_ms/ref_ms` 比例——CI runner（macos-14 = M1）与开发机（M3 Max）绝对耗时差 5–6×，但比例稳定（实测同机 4 轮 ±10%）。`ci.yml` 的 `operator-benchmark` 任务（macos-14）已**去掉 `continue-on-error`，为硬门**；模拟 3× 回归实测正确 exit 1。本机基线：ref 10.8ms；qmv 0.17 / qmm 11.9 / sdpa_d 0.39 / sdpa_p 24.3 / moe 47.8 ms（M3 Max, mlx 0.32.2）。
 - **C1 = #10**（部分）：新增 `scripts/gen_env_docs.py` 从 `omlx/` 扫描 `OMLX_*` 静态字面量生成 `docs/ENV_VARS.md`（实测 **134 变量 / 49 文件**，修正原「299/167」估计）；新增 `tests/test_env_var_inventory.py` 漂移守卫（文档与代码不一致即失败，进默认 CI）。**仅做清单/文档（低风险 additive）；调用点迁移到 `config.py` 待做（中高风险）。**
 
-- **C3 = #9**（部分）：新增 `omlx/patches/_compat.py` 集中 `REQUIRED_VERSIONS`（mlx 0.32.2 / mlx-lm 0.31.3 / mlx-vlm 0.7.1 / mlx-embeddings 0.1.0）+ `check_pins()` / `assert_pins_match()`；`omlx/patches/__init__.py` 在导入时调用（版本漂移即告警，非致命）；新增 `tests/test_patches_compat.py`（pins vs 运行环境 + 代表性 patch 生效冒烟：`llama4_attention` 标记）。**仅做版本断言 + 冒烟（低风险）；~60 个 patch 模块的全量收敛为单一适配层待做（巨型重构）。**
+- **C3 = #9**（部分）：新增 `omlx/patches/_compat.py` 集中 `REQUIRED_VERSIONS`（mlx 0.32.2 / mlx-lm 0.31.3 / mlx-vlm 0.7.1 / mlx-embeddings 0.1.0）+ `check_pins()` / `assert_pins_match()`；`omlx/patches/__init__.py` 在导入时调用（版本漂移即告警，非致命）；新增 `tests/test_patches_compat.py`（pins vs 运行环境 + 代表性 patch 生效冒烟）。**另**：`scripts/check_patch_seams.py` —— 报告式 seam 漂移体检（扫描 patch 对上游模块的属性访问，过滤守卫/自注入/vendored，捕获「seam 改名致静默失效或崩溃」这一类；`--strict` 可转硬门）+ `tests/test_check_patch_seams.py`。
+- **C3 附：已修的 seam 漂移**（mlx-vlm 0.7.1 把 qwen3.5 的 `_target_verify_*` 从 `language.py` 移入 speculative verifier）：
+  - `qwen35_moe_router` VLM 分支曾给 `Qwen3_5MoeSparseMoeBlock.__call__` 传不存在的 `target_verify` → 每次 prefill 崩溃；已改为与 LM 分支一致（提交 `5cb9a22`）。
+  - `qwen35_verify_sdpa_split`、`turboquant_attention`（target-verify 子补丁）seam 改名 `_target_verify_left_padded_attention` → `_qwen3_5_left_padded_attention`；前者改为先委托上游再走快路径（提交 `6af5a1a`）。
+  - **仍待重写（架构级，需真实模型验证）**：`qwen35_gdn_prework`（verify arm 已随 verify 流程迁入 verifier 而失效，且 `_gated_delta_update_verify_decode` 不复存在）、`qwen35_q4_mlp`（prefill 不再经该 seam）、`qwen35_moe_weighted_sum`（依赖 native kernel）。
 
 ### D1 = L0 算子层（↩️ 本地受阻）
 

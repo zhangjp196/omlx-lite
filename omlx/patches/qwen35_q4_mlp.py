@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 _PATCHED = False
 _LINEAR_PATCHED = False
 _LM_LINEAR_PATCHED = False
+_SEAM_WARNED = False
 _LM_GDN_PREFILL_BACKEND: (
     Callable[
         [Any, mx.array, bool],
@@ -387,6 +388,14 @@ def apply_qwen35_q4_prefill_linear_patch() -> bool:
     orig_linear = getattr(module, "_target_verify_linear", None)
     orig_linears = getattr(module, "_target_verify_linears", None)
     if orig_linear is None or orig_linears is None:
+        global _SEAM_WARNED
+        if not _SEAM_WARNED:
+            _SEAM_WARNED = True
+            logger.warning(
+                "qwen3.5 prefill linear: mlx-vlm no longer exposes "
+                "_target_verify_linear/_linears; the native q4 prefill matmul "
+                "path stays off. Run scripts/check_patch_seams.py."
+            )
         return False
 
     variant = int(os.environ.get("OMLX_QWEN35_Q4_LINEAR_VARIANT", "8"))

@@ -33,6 +33,7 @@ import mlx.nn as nn
 logger = logging.getLogger(__name__)
 
 _PATCHED = False
+_SEAM_WARNED = False
 _ENGAGED_LOGGED = False
 _KERNEL = None
 _QWEN4_DECODE_KERNEL = None
@@ -565,8 +566,17 @@ def apply_qwen35_gdn_prework_patch() -> bool:
         "_qwen3_5_advance_left_padding_info",
         "_qwen3_5_advance_lengths_info",
     )
-    if not all(hasattr(q35, n) for n in needed):
-        logger.debug("gdn prework: upstream seams missing; patch skipped")
+    missing = [n for n in needed if not hasattr(q35, n)]
+    if missing:
+        global _SEAM_WARNED
+        if not _SEAM_WARNED:
+            _SEAM_WARNED = True
+            logger.warning(
+                "gdn prework: mlx-vlm no longer exposes the target-verify "
+                "seams %s; the fused GDN verify prework stays off. Run "
+                "scripts/check_patch_seams.py for the standing report.",
+                ", ".join(missing),
+            )
         return False
 
     cls = q35.Qwen3_5GatedDeltaNet

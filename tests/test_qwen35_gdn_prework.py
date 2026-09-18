@@ -287,6 +287,7 @@ def test_qwen4_decode_route_commits_both_states_and_advances_once(monkeypatch):
             mx.zeros((1, 1, HV), dtype=mx.bfloat16),
             mx.zeros((1, 1, HV), dtype=mx.bfloat16),
         ),
+        raising=False,
     )
     monkeypatch.setattr(
         prework_mod,
@@ -303,7 +304,13 @@ def test_qwen4_decode_route_commits_both_states_and_advances_once(monkeypatch):
         "qwen4_decode_norm_gate_fused",
         lambda *args, **kwargs: fused,
     )
-    monkeypatch.setattr(q35, "_target_verify_linear", lambda *args: fused)
+    monkeypatch.setattr(q35, "_target_verify_linear", lambda *args: fused, raising=False)
+    monkeypatch.setattr(
+        q35,
+        "_gated_delta_update_verify_decode",
+        lambda *args, **kwargs: None,
+        raising=False,
+    )
 
     assert prework_mod.apply_qwen35_gdn_prework_patch()
     module = SimpleNamespace(
@@ -357,6 +364,16 @@ def test_qwen4_decode_route_restores_states_before_stock_fallback(monkeypatch):
         q35,
         "_target_verify_linears",
         lambda *args, **kwargs: (None, None, None, None),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        q35, "_target_verify_linear", lambda *args: None, raising=False
+    )
+    monkeypatch.setattr(
+        q35,
+        "_gated_delta_update_verify_decode",
+        lambda *args, **kwargs: None,
+        raising=False,
     )
     monkeypatch.setattr(
         prework_mod,
@@ -442,8 +459,15 @@ def test_patched_call_restores_conv_state_and_skips_advance_on_failure(monkeypat
                          lambda *a, **kw: (None, None, None, new_conv_state))
     monkeypatch.setattr(cls, "__call__", fake_orig_call, raising=False)
     monkeypatch.setattr(cls, "_omlx_gdn_prework_patched", False, raising=False)
-    monkeypatch.setattr(q35, "_target_verify_linears", fake_target_verify_linears)
-    monkeypatch.setattr(q35, "_gated_delta_update_verify_decode", _raise)
+    monkeypatch.setattr(
+        q35, "_target_verify_linears", fake_target_verify_linears, raising=False
+    )
+    monkeypatch.setattr(
+        q35, "_gated_delta_update_verify_decode", _raise, raising=False
+    )
+    monkeypatch.setattr(
+        q35, "_target_verify_linear", lambda *args: None, raising=False
+    )
 
     assert prework_mod.apply_qwen35_gdn_prework_patch() is True
     patched_call = cls.__call__
@@ -511,9 +535,13 @@ def test_patched_call_restores_state_and_discards_sink_on_late_failure(monkeypat
                          lambda *a, **kw: (None, None, None, new_conv_state))
     monkeypatch.setattr(cls, "__call__", fake_orig_call, raising=False)
     monkeypatch.setattr(cls, "_omlx_gdn_prework_patched", False, raising=False)
-    monkeypatch.setattr(q35, "_target_verify_linears", fake_target_verify_linears)
-    monkeypatch.setattr(q35, "_gated_delta_update_verify_decode", fake_delta_update)
-    monkeypatch.setattr(q35, "_target_verify_linear", _raise)
+    monkeypatch.setattr(
+        q35, "_target_verify_linears", fake_target_verify_linears, raising=False
+    )
+    monkeypatch.setattr(
+        q35, "_gated_delta_update_verify_decode", fake_delta_update, raising=False
+    )
+    monkeypatch.setattr(q35, "_target_verify_linear", _raise, raising=False)
 
     assert prework_mod.apply_qwen35_gdn_prework_patch() is True
     patched_call = cls.__call__

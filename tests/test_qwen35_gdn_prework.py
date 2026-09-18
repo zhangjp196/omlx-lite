@@ -646,3 +646,28 @@ def test_verify_gdn_fused_path_matches_stock_and_engages():
     assert fused.shape == stock.shape
     diff = mx.abs(stock.astype(mx.float32) - fused.astype(mx.float32)).max().item()
     assert diff == 0.0, f"fused verify prework diverged: {diff}"
+
+
+def test_decode_arm_is_skipped_without_old_target_verify_seam(monkeypatch):
+    """The target-verify decode wrapper must not install on mlx-vlm 0.7.1.
+
+    It re-implements the pre-0.6.16 forward and passes ``gdn_sink`` /
+    ``target_verify`` to ``Qwen3_5GatedDeltaNet.__call__``, which 0.7.1 no
+    longer accepts -- a regression that crashed every prefill. Only the
+    verifier hook should install here.
+    """
+    import omlx.patches.qwen35_gdn_prework as gp
+    from mlx_vlm.models.qwen3_5 import language as q35
+
+    if hasattr(q35, "_target_verify_linears"):
+        pytest.skip("old target-verify seam present; decode arm is expected")
+
+    monkeypatch.setattr(gp, "_PATCHED", False)
+    monkeypatch.setattr(
+        q35.Qwen3_5GatedDeltaNet, "_omlx_gdn_prework_patched", False, raising=False
+    )
+    assert gp.apply_qwen35_gdn_prework_patch() is True  # verifier hook applies
+    assert (
+        q35.Qwen3_5GatedDeltaNet.__dict__.get("_omlx_gdn_prework_patched", False)
+        is False
+    ), "target-verify decode wrapper installed without the seam it needs"

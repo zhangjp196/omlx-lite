@@ -681,10 +681,15 @@ def apply_qwen35_gdn_prework_patch() -> bool:
         return verify_applied
 
     # Decode arm (qwen4 fused B1/T1) still hooks the module call. Its fused
-    # path needs the pre-0.6.16 target-verify seam, so it degrades to stock
-    # wherever that is absent.
+    # path re-implements the pre-0.6.16 target-verify forward (``gdn_sink`` /
+    # ``target_verify`` kwargs), so it may only install where that seam still
+    # exists. On 0.7.1 the module ``__call__`` rejects those kwargs, so leave
+    # the arm off entirely -- the verifier hook above is the 0.7.1 path.
     needed = (
         "Qwen3_5GatedDeltaNet",
+        "_target_verify_linears",
+        "_target_verify_linear",
+        "_gated_delta_update_verify_decode",
         "_qwen3_5_advance_left_padding_info",
         "_qwen3_5_advance_lengths_info",
     )

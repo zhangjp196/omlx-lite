@@ -18,7 +18,10 @@ from typing import Any
 
 import mlx.core as mx
 import mlx.nn as nn
-from dflash_mlx.cache.snapshot import TargetHiddenChunks
+try:
+    from dflash_mlx.cache.snapshot import TargetHiddenChunks
+except ImportError:  # pinned dflash-mlx predates the chunked target API
+    TargetHiddenChunks = None
 from dflash_mlx.engine.target_ops import TargetCapabilities
 from dflash_mlx.model import (
     ContextOnlyDraftKVCache,
@@ -41,7 +44,9 @@ def _normalize_target_hidden(
     target_hidden: mx.array | TargetHiddenChunks,
 ) -> mx.array | TargetHiddenChunks:
     """Normalize sparse target context without materializing trimmed spans."""
-    if isinstance(target_hidden, TargetHiddenChunks):
+    if TargetHiddenChunks is not None and isinstance(
+        target_hidden, TargetHiddenChunks
+    ):
         return TargetHiddenChunks(
             total_len=int(target_hidden.total_len),
             chunks=tuple(norm(chunk) for chunk in target_hidden.chunks),

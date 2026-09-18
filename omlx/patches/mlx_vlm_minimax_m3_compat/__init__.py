@@ -60,11 +60,16 @@ def is_applied() -> bool:
 def _install_vendor_namespace() -> None:
     import mlx_vlm
     import mlx_vlm.models
-    import mlx_vlm.tool_parsers
 
     _append_package_path(mlx_vlm, _VENDOR_MLX_VLM)
     _append_package_path(mlx_vlm.models, _VENDOR_MLX_VLM / "models")
-    _append_package_path(mlx_vlm.tool_parsers, _VENDOR_MLX_VLM / "tool_parsers")
+    # mlx-vlm renamed ``tool_parsers`` -> ``tools``; only extend the old
+    # namespace where it still exists so its absence cannot fail the whole
+    # compat patch.
+    with contextlib.suppress(ImportError):
+        import mlx_vlm.tool_parsers  # noqa: F401
+
+        _append_package_path(mlx_vlm.tool_parsers, _VENDOR_MLX_VLM / "tool_parsers")
 
 
 def _append_package_path(package: Any, path: Path) -> None:
@@ -83,9 +88,12 @@ def _import_vendor_modules() -> None:
         "mlx_vlm.models.minimax_m3_vl.processing_minimax_m3_vl",
         "mlx_vlm.models.minimax_m3_vl",
         "mlx_vlm.models.minimax_m3",
-        "mlx_vlm.tool_parsers.minimax_m3",
     ):
         importlib.import_module(module_name)
+    # Newer mlx-vlm dropped the ``tool_parsers`` namespace; skip the vendored
+    # parser there rather than failing the whole patch.
+    with contextlib.suppress(ImportError):
+        importlib.import_module("mlx_vlm.tool_parsers.minimax_m3")
 
 
 def _patch_utils(vlm_utils: Any) -> None:

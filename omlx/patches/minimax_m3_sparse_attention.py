@@ -193,17 +193,37 @@ def apply_minimax_m3_sparse_attention_patch() -> bool:
     if getattr(current_call, _PATCH_MARKER, False):
         return False
 
+    # The upstream MiniMaxAttention seams moved; take them defensively so a
+    # rename skips the patch cleanly instead of KeyError-ing halfway through
+    # and leaving a half-installed ``__call__``.
+    seams = {
+        name: attention_cls.__dict__.get(name)
+        for name in (
+            "_build_sparse_mask",
+            "_build_sparse_decode_indices",
+            "_sparse_decode_attention",
+        )
+    }
+    missing = [name for name, fn in seams.items() if fn is None]
+    if missing:
+        logger.warning(
+            "minimax_m3_sparse_attention: mlx-vlm MiniMaxAttention no longer "
+            "exposes %s; patch skipped. Run scripts/check_patch_seams.py.",
+            ", ".join(missing),
+        )
+        return False
+
     attention_cls.__call__ = _make_patched_call(current_call)
     attention_cls._build_sparse_mask = _make_patched_build_sparse_mask(
-        attention_cls.__dict__["_build_sparse_mask"]
+        seams["_build_sparse_mask"]
     )
     attention_cls._build_sparse_decode_indices = (
         _make_patched_build_sparse_decode_indices(
-            attention_cls.__dict__["_build_sparse_decode_indices"]
+            seams["_build_sparse_decode_indices"]
         )
     )
     attention_cls._sparse_decode_attention = _make_patched_sparse_decode_attention(
-        attention_cls.__dict__["_sparse_decode_attention"]
+        seams["_sparse_decode_attention"]
     )
     logger.info("MiniMax M3 sparse attention left-padding patch applied")
     return True

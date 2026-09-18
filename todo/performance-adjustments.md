@@ -185,7 +185,11 @@ A1 → B1(#12 基线) → D1(L0 算子实测) → D4/D3(L7/L6) → D2/D6(L5/L10)
 - **C3 附：已修的 seam 漂移**（mlx-vlm 0.7.1 把 qwen3.5 的 `_target_verify_*` 从 `language.py` 移入 speculative verifier）：
   - `qwen35_moe_router` VLM 分支曾给 `Qwen3_5MoeSparseMoeBlock.__call__` 传不存在的 `target_verify` → 每次 prefill 崩溃；已改为与 LM 分支一致（提交 `5cb9a22`）。
   - `qwen35_verify_sdpa_split`、`turboquant_attention`（target-verify 子补丁）seam 改名 `_target_verify_left_padded_attention` → `_qwen3_5_left_padded_attention`；前者改为先委托上游再走快路径（提交 `6af5a1a`）。
-  - **仍待重写（架构级，需真实模型验证）**：`qwen35_gdn_prework`（verify arm 已随 verify 流程迁入 verifier 而失效，且 `_gated_delta_update_verify_decode` 不复存在）、`qwen35_q4_mlp`（prefill 不再经该 seam）、`qwen35_moe_weighted_sum`（依赖 native kernel）。
+  - **0.7.1 重写（本次）**：
+    - `qwen35_gdn_prework`：verify 流程已迁入 verifier，改挂 `Qwen3_5BatchInvariantForward._gated_delta`（镜像其前向、仅用融合 kernel 替换 prework）。**与 stock 逐位一致（diff 0.0）**，spy 证明融合 kernel 执行（提交 `bce2dd1`）。
+    - `qwen35_q4_mlp`：**主 MLP 补丁本就 0.7.1 兼容**（包 `Qwen3_5MLP.__call__`，仅 native-gated）；仅 **VLM `_prefill_linear`** 是 seam-dead —— 改为直接包 `Qwen3_5Attention`/`Qwen3_5GatedDeltaNet` 前向（仿 LM 变体）。GDN 侧 **逐位一致（diff 0.0）**，attention 侧同法镜像（提交 `8cd55b2`）。
+    - `qwen35_q4_lm_prefill_linear` / `qwen35_moe_weighted_sum`：**经核查本就 0.7.1 兼容**（直接包 `__call__`，仅 native-gated），无需重写。
+  - **仍受 native 限制**：qmm/weighted-sum 的融合路径本地未编译，须你的 native 构建做端到端验证。
 
 ### D1 = L0 算子层（↩️ 本地受阻）
 

@@ -48,3 +48,27 @@ def test_checker_ignores_guarded_reference(tmp_path):
         encoding="utf-8",
     )
     assert checker.check_file(probe, skip_names=set()) == []
+
+
+def test_repo_has_no_unguarded_upstream_seam_references():
+    """The patch tree must stay free of unguarded upstream-symbol reads.
+
+    A patch that reads an attribute the pinned mlx-lm / mlx-vlm does not
+    expose crashes the engine at model load or inference -- the class of bug
+    behind the qwen3.5 seam crashes. Guard against a regression by running the
+    checker over the whole tree.
+    """
+    checker = _load_checker()
+    skip = checker._omlx_defined_names()
+    hits = []
+    for path in sorted((_ROOT / "omlx" / "patches").rglob("*.py")):
+        if "vendor" in path.parts:
+            continue
+        for lineno, ref, upstream in checker.check_file(path, skip_names=skip):
+            hits.append(
+                f"{path.relative_to(_ROOT)}:{lineno}: {ref} (from {upstream})"
+            )
+    assert not hits, (
+        "unguarded references to upstream symbols the pinned deps do not "
+        "expose:\n" + "\n".join(hits)
+    )

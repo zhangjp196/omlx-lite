@@ -158,6 +158,55 @@ class TestMacOSVMStats:
             assert pme.get_macos_vm_stats() is None
 
 
+class TestIOGPUWiredLimitCache:
+    """The iogpu.wired_limit_mb sysctl read is cached (~6ms subprocess)."""
+
+    def setup_method(self):
+        pme._iogpu_wired_limit_cache = None
+
+    def teardown_method(self):
+        pme._iogpu_wired_limit_cache = None
+
+    def test_repeated_reads_hit_cache(self, monkeypatch):
+        calls = {"n": 0}
+
+        def fake_read():
+            calls["n"] += 1
+            return 8 * 1024**3
+
+        monkeypatch.setattr(pme, "_read_iogpu_wired_limit_bytes", fake_read)
+
+        assert pme.get_iogpu_wired_limit_bytes() == 8 * 1024**3
+        assert pme.get_iogpu_wired_limit_bytes() == 8 * 1024**3
+        assert calls["n"] == 1  # second call served from cache
+
+    def test_force_refresh_bypasses_cache(self, monkeypatch):
+        calls = {"n": 0}
+        values = [4 * 1024**3, 9 * 1024**3]
+
+        def fake_read():
+            calls["n"] += 1
+            return values[min(calls["n"] - 1, len(values) - 1)]
+
+        monkeypatch.setattr(pme, "_read_iogpu_wired_limit_bytes", fake_read)
+
+        assert pme.get_iogpu_wired_limit_bytes() == 4 * 1024**3
+        assert pme.get_iogpu_wired_limit_bytes() == 4 * 1024**3  # cached
+        assert pme.get_iogpu_wired_limit_bytes(force_refresh=True) == 9 * 1024**3
+        assert calls["n"] == 2
+
+    def test_effective_cap_passes_force_refresh(self, monkeypatch):
+        seen = {}
+
+        def fake_sysctl(*, force_refresh=False):
+            seen["force_refresh"] = force_refresh
+            return 6 * 1024**3
+
+        monkeypatch.setattr(pme, "get_iogpu_wired_limit_bytes", fake_sysctl)
+        assert pme.get_effective_metal_cap_bytes(force_refresh=True) == 6 * 1024**3
+        assert seen["force_refresh"] is True
+
+
 @pytest.fixture
 def mock_engine_pool():
     """Create a mock EnginePool with required methods."""

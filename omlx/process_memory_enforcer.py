@@ -134,14 +134,40 @@ def get_macos_vm_stats() -> dict[str, int] | None:
     return psutil_compat.get_macos_vm_stats()
 
 
-def get_iogpu_wired_limit_bytes() -> int:
+# Reading iogpu.wired_limit_mb spawns a /usr/sbin/sysctl subprocess (~6ms).
+# Admin routes call it on every request, so cache the read briefly. The
+# value only changes when the user runs `sysctl -w` (or edits the boot
+# setting), so a short TTL is safe; force_refresh bypasses it on paths
+# that must observe a just-changed sysctl immediately.
+_iogpu_wired_limit_cache: tuple[float, int] | None = None
+_IOGPU_WIRED_LIMIT_CACHE_TTL_SECONDS = 30.0
+
+
+def get_iogpu_wired_limit_bytes(*, force_refresh: bool = False) -> int:
     """Read the kernel's `iogpu.wired_limit_mb` sysctl in bytes.
 
     Returns 0 when the value is unset (`0` in sysctl means "use the system
     default", typically ~75% of RAM) or when the read fails. Callers
     should treat 0 as "limit unknown / not enforced" and fall back to a
     different source (e.g. mx.device_info()'s working set size).
+
+    Cached for ``_IOGPU_WIRED_LIMIT_CACHE_TTL_SECONDS`` because the read
+    is a ~6ms subprocess and admin routes poll it. Pass
+    ``force_refresh=True`` when the caller must observe a just-changed
+    sysctl (enforcer startup / wired-limit application).
     """
+    global _iogpu_wired_limit_cache
+    if not force_refresh and _iogpu_wired_limit_cache is not None:
+        cached_at, cached_value = _iogpu_wired_limit_cache
+        if time.monotonic() - cached_at < _IOGPU_WIRED_LIMIT_CACHE_TTL_SECONDS:
+            return cached_value
+    value = _read_iogpu_wired_limit_bytes()
+    _iogpu_wired_limit_cache = (time.monotonic(), value)
+    return value
+
+
+def _read_iogpu_wired_limit_bytes() -> int:
+    """Uncached sysctl read backing ``get_iogpu_wired_limit_bytes``."""
     try:
         out = subprocess.run(
             ["/usr/sbin/sysctl", "-n", "iogpu.wired_limit_mb"],
@@ -171,7 +197,7 @@ def _get_max_metal_working_set_bytes() -> int:
         return 0
 
 
-def get_effective_metal_cap_bytes() -> int:
+def get_effective_metal_cap_bytes(*, force_refresh: bool = False) -> int:
     """Effective per-process Metal allocation cap.
 
     Uses the kernel iogpu.wired_limit_mb when explicitly set (> 0).
@@ -179,7 +205,7 @@ def get_effective_metal_cap_bytes() -> int:
     This is the value above which `mx.set_wired_limit` will reject the
     request, so callers should clamp against it before calling MLX.
     """
-    sysctl_cap = get_iogpu_wired_limit_bytes()
+    sysctl_cap = get_iogpu_wired_limit_bytes(force_refresh=force_refresh)
     if sysctl_cap > 0:
         return sysctl_cap
     return _get_max_metal_working_set_bytes()
@@ -242,7 +268,7 @@ def _apply_metal_wired_limit(desired_bytes: int) -> tuple[int, int | None]:
         return 0, None
 
     suggestion = _wired_limit_suggestion_bytes(desired_bytes)
-    sysctl_cap = get_iogpu_wired_limit_bytes()
+    sysctl_cap = get_iogpu_wired_limit_bytes(force_refresh=True)
     if sysctl_cap <= 0:
         effective_cap = get_effective_metal_cap_bytes()
         if effective_cap > 0 and effective_cap < suggestion:
@@ -827,7 +853,9 @@ class ProcessMemoryEnforcer:
 
     def _refresh_effective_metal_cap_bytes(self) -> int:
         """Refresh the cached effective Metal cap outside the poll hot path."""
-        self._effective_metal_cap_bytes = get_effective_metal_cap_bytes()
+        self._effective_metal_cap_bytes = get_effective_metal_cap_bytes(
+            force_refresh=True
+        )
         return self._effective_metal_cap_bytes
 
     def _get_effective_metal_cap_bytes(self) -> int:
